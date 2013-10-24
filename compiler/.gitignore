@@ -1,0 +1,8 @@
+tmptime
+*tmp*
+*.circuit*
+*.spec
+*.cons
+*.c
+*.defines
+frontend/bin/*
