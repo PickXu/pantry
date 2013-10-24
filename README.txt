@@ -1,4 +1,4 @@
-s source code is released under a BSD-style license. See LICENSE
+This source code is released under a BSD-style license. See LICENSE
 for more details.
 
 
