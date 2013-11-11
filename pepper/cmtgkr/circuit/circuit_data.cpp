@@ -226,7 +226,7 @@ CircuitData(size_t memBudget, const std::vector<size_t>& sizes, const string& su
   }
 
   // Reserve circuit directory.
-  if (!recursive_mkdir(dataDir))
+  if (!recursive_mkdir(circuitDir))
     throw runtime_error("Could not create new directory for circuit.");
 }
 
