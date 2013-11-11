@@ -1,5 +1,8 @@
 # This file lists the flags which are passed to the C++ code
 
+#Uncomment this line if you want to build CMT codebase
+BUILD_CMT = 0
+
 #Uncomment if this system does not have cuda / nvcc installed
 USE_GPU = 0 
 
