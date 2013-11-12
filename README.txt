@@ -43,13 +43,12 @@ III. Running examples
 
     Specify input sizes in apps_sfdl/mm.c
 
-    Run "make C_FILES=mm_c"
+    To test, use pepper/run/run_pepper.sh
     
     #Note - The first time a new computation is being compiled, the above command will
     #fail with "No target to compile ... _p_exo.o". In this case, re-run
     #the above command and it should work.
     
-    To test, use pepper/run/run_pepper.sh
 
   (2) With a cluster, for experiments.
 
