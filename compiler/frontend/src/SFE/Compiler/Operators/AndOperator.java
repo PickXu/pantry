@@ -4,9 +4,6 @@
 
 package SFE.Compiler.Operators;
 
-import SFE.Compiler.AssignmentStatement;
-import SFE.Compiler.BinaryOpExpression;
-import SFE.Compiler.BlockStatement;
 import SFE.Compiler.BooleanConstant;
 import SFE.Compiler.BooleanExpressions;
 import SFE.Compiler.BooleanType;

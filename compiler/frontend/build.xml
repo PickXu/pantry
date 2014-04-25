@@ -6,7 +6,9 @@
 
     <target name="compile">
     	<mkdir dir="bin"/>
-    	<javac destdir="bin"
+        <javac target="1.7"
+               debug="true"
+               destdir="bin"
     		   srcdir="src;gensrc"
     		   excludes="cql/**"
     		   includeantruntime="false"/>

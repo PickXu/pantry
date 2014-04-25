@@ -3,7 +3,6 @@ package SFE.Compiler.Operators;
 import java.io.PrintWriter;
 import java.math.BigInteger;
 
-import SFE.Compiler.AssignmentStatement;
 import SFE.Compiler.BinaryOpExpression;
 import SFE.Compiler.BlockStatement;
 import SFE.Compiler.Expression;

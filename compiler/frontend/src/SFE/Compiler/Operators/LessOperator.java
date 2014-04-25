@@ -5,10 +5,7 @@
 package SFE.Compiler.Operators;
 
 import java.io.PrintWriter;
-
-import SFE.Compiler.AssignmentStatement;
 import SFE.Compiler.BinaryOpExpression;
-import SFE.Compiler.BlockStatement;
 import SFE.Compiler.BooleanConstant;
 import SFE.Compiler.BooleanType;
 import SFE.Compiler.Expression;

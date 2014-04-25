@@ -68,7 +68,7 @@ public class AssertZeroStatement extends StatementWithOutputLine implements Outp
 
     outputLine = Program.getLineNumber();
     assignments.add(this);
-  }  
+  }
 
   public int getOutputLine() {
     return outputLine;

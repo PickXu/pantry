@@ -32,7 +32,7 @@ public class BitStringHelper {
       toRet.targetBits = (BitString)ptrToDataOrBS;
       toRet.targetCVar = null;
     } else {
-      Pointer ptr = Pointer.toPointer(ptrToDataOrBS);
+      Pointer ptr = Pointer.toPointerConstant(ptrToDataOrBS);
       LvalExpression target = toRet.targetCVar = ptr.access();
       Type targetType = target.getDeclaredType();
       int numBits = BitString.getBits(targetType); 
@@ -73,7 +73,7 @@ public class BitStringHelper {
     if (ptrToDataToPut instanceof BitString){
       bitsToRet = (BitString)ptrToDataToPut;
     } else {
-      Pointer ptr = Pointer.toPointer(ptrToDataToPut);
+      Pointer ptr = Pointer.toPointerConstant(ptrToDataToPut);
       LvalExpression actualData = ptr.access();
       //Turn into a bit string of that many bits.
       //Get all derived bits and split them up.

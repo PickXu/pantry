@@ -267,7 +267,6 @@ public class TranslateROCQL {
 	}
 
 	private static void printBinarySearch(String left, int size, String value) {
-		// TODO instead of do the computation, output C code to do the
 		// computation.
 		// int right = left + size - 1;
 		System.out.printf("%sleft = %s;\n", PrintAPI.getIndent(), left);

@@ -37,7 +37,7 @@ public class UnaryPlusOperator extends Operator implements SLPTReduction, UnaryO
     }
     
     if (lhs.size() > 1) {
-      //Expand nonprimitive type
+      //Expand nonprimitive type (array, struct) happens here.
       for(int i = 0; i < lhs.size(); i++) {
         //result.addStatement(as);
         AssignmentStatement subAs = new AssignmentStatement(

@@ -1,9 +1,21 @@
+#include <include/db.h>
 #include <libv/zcomputation_p.h>
 #include <storage/configurable_block_store.h>
 #include <storage/gghA.h>
 #include <storage/ram_impl.h>
+#include <common/benes_router.h>
+
+// rsw added for exo_compute
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+#include <sstream>
+#include <iterator>
+#include <unistd.h>
+
 #include <string>
-#include <include/db.h>
+#include <boost/unordered_map.hpp>
 
 ComputationProver::
 ComputationProver(int ph, int b_size, int num_r, int size_input,
@@ -243,8 +255,8 @@ void ComputationProver::compute_less_than_int(FILE* pws_file) {
   next_token_or_error(pws_file, cmds);
   int N_start = atoi(cmds + 1);
   expect_next_token(pws_file, "N", "Invalid <I");
-  int N = atoi(cmds);
   next_token_or_error(pws_file, cmds);
+  int N = atoi(cmds);
   expect_next_token(pws_file, "Mlt", "Invalid <I");
   next_token_or_error(pws_file, cmds);
   mpq_t& Mlt = voc(cmds, temp_q);
@@ -458,6 +470,275 @@ void ComputationProver::compute_db_put_bits(FILE* pws_file) {
 
   _ram->put(idx, data);
 }
+
+void ComputationProver::compute_exo_compute(FILE *pws_file) {
+    // read in the EXO_COMPUTE line
+    char cmds[BUFLEN];
+
+    // grab exoid
+    expect_next_token(pws_file, "EXOID", "Invalid EXO_COMPUTE");
+    next_token_or_error(pws_file,cmds);
+    int exoId = atoi(cmds);
+
+    expect_next_token(pws_file, "INPUTS", "Invalid EXO_COMPUTE");
+    expect_next_token(pws_file, "[", "Invalid EXO_COMPUTE");
+    std::vector< std::vector<std::string> > inVarsStr;
+    // get the input args
+    compute_exo_compute_getLL(inVarsStr, pws_file, cmds);
+
+    expect_next_token(pws_file, "OUTPUTS", "Invalid EXO_COMPUTE");
+    expect_next_token(pws_file, "[", "Invalid EXO_COMPUTE");
+    std::vector<std::string> outVarsStr;
+    // get the output args
+    compute_exo_compute_getL(outVarsStr, pws_file, cmds);
+
+    // now prepare the string we will send to stdin of the process
+    std::stringstream procIn;
+    for (std::vector< std::vector<std::string> >::iterator it = inVarsStr.begin(); it != inVarsStr.end(); it++) {
+        procIn << "[ ";
+        for (std::vector<std::string>::iterator jt = (*it).begin(); jt != (*it).end(); jt++) {
+            mpq_t &vval = voc((*jt).c_str(), temp_q);
+            procIn << mpz_get_str(cmds,10,mpq_numref(vval)) << '%';
+            procIn << mpz_get_str(cmds,10,mpq_denref(vval)) << ' ';
+        }
+        procIn << "] ";
+    }
+    std::string procInStr = procIn.str();
+
+    // get ready to launch child process
+    int stdinFD[2];
+    int stdoutFD[2];
+    const int PIPE_RD = 0;  // much easier to read this way
+    const int PIPE_WR = 1;
+
+    if (pipe(stdinFD) < 0) {
+        gmp_printf("ERROR: exo_compute couldn't open stdin pipes: %d\n", errno);
+        return;
+    }
+    if (pipe(stdoutFD) < 0) {
+        gmp_printf("ERROR: exo_compute couldn't open stdout pipes: %d\n", errno);
+        return;
+    }
+
+    int chld = fork();
+    if (chld == 0) {    // this is the child process
+        // build up the arguments to the command
+        sprintf(cmds, "./bin/exo%d",exoId);
+        // buffer is totally big enough that this is acceptable. tee hee
+        char *outLenStr = cmds + strlen(cmds) + 2;
+        sprintf(outLenStr,"%d",outVarsStr.size());
+
+        // "a careful programmer will not use dup2() without closing newfd first."
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+
+        // replace stdin and stdout with the pipes the parent gave us
+        if (dup2(stdinFD[PIPE_RD], STDIN_FILENO) < 0) {
+            gmp_printf("ERROR: exo_compute (child) could not replace stdin: %d\n", errno);
+            exit(-1);
+        }
+        if (dup2(stdoutFD[PIPE_WR], STDOUT_FILENO) < 0) {
+            gmp_printf("ERROR: exo_compute (child) could not replace stdout: %d\n", errno);
+            exit(-1);
+        }
+
+        // don't need these any more. Note that we are closing after duping, which
+        // is OK because the other copy is still open
+        close(stdinFD[0]); close(stdinFD[1]); close(stdoutFD[0]); close(stdoutFD[1]);
+
+        // now exec it
+        // "exo0 100 5" or whatever
+        execlp(cmds,cmds,outLenStr,(char *)NULL);
+        //execlp("cat","cat",(char *)NULL);
+
+        // if we get here, there was an error!
+        gmp_printf("ERROR: exo_compute (child) failed to exec: %d\n", errno);
+        exit(-1);
+    } else if (chld < 0) {  // failed to create child process
+        gmp_printf("ERROR: exo_compute failed to fork: %d\n", errno);
+        return;
+    }
+
+    // don't need the remote endpoints of these two pipes
+    close(stdinFD[PIPE_RD]); close(stdoutFD[PIPE_WR]);
+
+    // write the input to the process
+    if (write(stdinFD[PIPE_WR], procInStr.c_str(), procInStr.length()) < (int) procInStr.length()) {
+        gmp_printf("ERROR: exo_compute failed to write full input string to child process: %d\n", errno);
+        return;
+    }
+    // close the pipe to send EOF
+    close(stdinFD[PIPE_WR]);
+
+    // now grab its output back
+    std::stringstream procOut;
+    int rdNum = read(stdoutFD[PIPE_RD], cmds, BUFLEN-1);
+    while (rdNum > 0) {
+        cmds[rdNum] = '\0'; // add null termination so we can send it to the stream
+        procOut << cmds;
+        rdNum = read(stdoutFD[PIPE_RD], cmds, BUFLEN-1);
+    }
+    close(stdoutFD[PIPE_RD]);
+    // make sure we didn't error out of the above loop
+    if (rdNum < 0) {
+        gmp_printf("ERROR: exo_compute failed reading from child process: %d\n", errno);
+        return;
+    }
+
+    // now tokenize the input we just got
+    std::istream_iterator<std::string> pOutIter(procOut);
+    std::istream_iterator<std::string> eof;
+    std::vector<std::string> pOutTok(pOutIter,eof);
+
+    int pTok = 0;
+
+    // walk through the tokens from the child process and the outVars list, assigning the latter to the former
+    for ( std::vector<std::string>::iterator it = outVarsStr.begin() ;
+          (it != outVarsStr.end()) && (pTok < (int) pOutTok.size()) ; 
+          it++ , pTok++ ) {
+        mpq_t &vval = voc((*it).c_str(),temp_q);
+        if (&vval == &temp_q) {
+            gmp_printf("ERROR: exo_compute trying to write output to a const value, %s.\n", (*it).c_str());
+        } else if (mpq_set_str(vval, pOutTok[pTok].c_str(), 0) < 0) {
+            gmp_printf("ERROR: exo_compute failed to convert child process output to mpq_t: %s\n", pOutTok[pTok].c_str());
+        }
+    }
+
+    // and we're done!
+    return;
+}
+
+void ComputationProver::compute_exo_compute_getLL(std::vector< std::vector<std::string> > &inLL, FILE *pws_file, char *buf) {
+    // pull until we get ] ]
+    while(1) {
+        // if we have ] then we're done
+        next_token_or_error(pws_file, buf);
+        if (strcmp(buf,"]") == 0) { break; }
+
+        // otherwise it had better have been [
+        zcomp_assert(buf,"[","Invalid EXO_COMPUTE");
+
+        // now pull in the whole list
+        std::vector<std::string> tmpList;
+        compute_exo_compute_getL(tmpList,pws_file,buf);
+        inLL.push_back(tmpList);
+    }
+}
+
+void ComputationProver::compute_exo_compute_getL(std::vector<std::string> &inL, FILE *pws_file, char *buf) {
+    while(1) {
+        next_token_or_error(pws_file, buf);
+        if(strcmp(buf,"]") == 0) { break; }
+        // convert char* so string, add to vector
+        string sbuf(buf);
+        inL.push_back(sbuf);
+    }
+}
+
+#define MAX_RAM_SIZE (1 << (FAST_RAM_ADDRESS_WIDTH))
+
+static boost::unordered_map<size_t, mpq_t*> true_ram;
+
+void ComputationProver::compute_fast_ramget(FILE* pws_file) {
+  char cmds[BUFLEN];
+
+  mpq_t addr;
+  mpq_init(addr);
+
+  expect_next_token(pws_file, "ADDR", "Invalid RAMGET_FAST");
+  next_token_or_error(pws_file, cmds);
+  mpq_set(addr, voc(cmds, temp_q));
+
+  expect_next_token(pws_file, "VALUE", "Invalid RAMGET_FAST");
+  next_token_or_error(pws_file, cmds);
+  mpq_t& value = voc(cmds, temp_q);
+
+  // we don't need to worry about ramget in a branch, do we?
+  // No, we don't
+  size_t addr_idx = mpz_get_ui(mpq_numref(addr));
+  if (true_ram.find(addr_idx) != true_ram.end()) {
+    mpq_set(value, true_ram[addr_idx][0]);
+  } else {
+    mpq_set_si(value, 0, 1);
+  }
+  //gmp_printf("ramget addr: %d value: %ld\n", addr_idx, true_ram[addr_idx]);
+
+  mpq_clear(addr);
+}
+
+void ComputationProver::compute_fast_ramput(FILE* pws_file) {
+  char cmds[BUFLEN];
+
+  mpq_t addr, value, condition;
+  mpq_inits(addr, value, condition, NULL);
+
+  expect_next_token(pws_file, "ADDR", "Invalid RAMPUT_FAST");
+  next_token_or_error(pws_file, cmds);
+  mpq_set(addr, voc(cmds, temp_q));
+
+  expect_next_token(pws_file, "VALUE", "Invalid RAMPUT_FAST");
+  next_token_or_error(pws_file, cmds);
+  mpq_set(value, voc(cmds, temp_q));
+
+  expect_next_token(pws_file, "CONDITION", "Invalid RAMPUT_FAST");
+  next_token_or_error(pws_file, cmds);
+  mpq_set(condition, voc(cmds, temp_q));
+  next_token_or_error(pws_file, cmds);
+
+  int branch = 0;
+  if (strcmp(cmds, "true") == 0) {
+    branch = 1;
+  }
+
+  next_token_or_error(pws_file, cmds);
+  mpq_t& target = voc(cmds, temp_q);
+
+  // if the conditional bit is non-zero, actually execute the ramput
+  size_t addr_idx = mpz_get_ui(mpq_numref(addr));
+  if (mpq_cmp_ui(condition, 0, 1) != 0) {
+    if (branch) {
+      if (true_ram.find(addr_idx) != true_ram.end()) {
+        mpq_set(true_ram[addr_idx][0], value);
+      } else {
+        true_ram[addr_idx] = new mpq_t[1];
+        mpq_init(true_ram[addr_idx][0]);
+        mpq_set(true_ram[addr_idx][0], value);
+      }
+      mpq_set(target, value);
+      //int64_t v = mpz_get_si(mpq_numref(value));
+      //true_ram[addr_idx] = v;
+      //gmp_printf("ramput addr: %d value %ld\n", addr_idx, true_ram[addr_idx]);
+    } else {
+      if (true_ram.find(addr_idx) != true_ram.end()) {
+        mpq_set(target, true_ram[addr_idx][0]);
+      } else {
+        mpq_set_si(target, 0, 1);
+      }
+    }
+  } else {
+    if (!branch) {
+      if (true_ram.find(addr_idx) != true_ram.end()) {
+        mpq_set(true_ram[addr_idx][0], value);
+      } else {
+        true_ram[addr_idx] = new mpq_t[1];
+        mpq_init(true_ram[addr_idx][0]);
+        mpq_set(true_ram[addr_idx][0], value);
+      }
+      //int64_t v = mpz_get_si(mpq_numref(value));
+      //true_ram[addr_idx] = v;
+      //gmp_printf("ramput addr: %d value %ld\n", addr_idx, true_ram[addr_idx]);
+    } else {
+      if (true_ram.find(addr_idx) != true_ram.end()) {
+        mpq_set(target, true_ram[addr_idx][0]);
+      } else {
+        mpq_set_si(target, 0, 1);
+      }
+    }
+  }
+
+  mpq_clears(addr, value, condition, NULL);
+}
+
 
 void ComputationProver::compute_db_get_sibling_hash(FILE* pws_file) {
   char cmds[BUFLEN];
@@ -786,6 +1067,87 @@ void ComputationProver::compute_matrix_vec_mul(FILE* pws_file) {
   clear_del_vec(result, number_of_rows);
 }
 
+void ComputationProver::compute_benes_network(FILE* pws_file) {
+  char cmds[BUFLEN];
+
+  expect_next_token(pws_file, "WIDTH", "Invalid BENES_NETWORK, WIDTH exected.");
+  next_token_or_error(pws_file, cmds);
+  int width = atoi(cmds);
+
+  expect_next_token(pws_file, "DEPTH", "Invalid BENES_NETWORK, DEPTH expected.");
+  next_token_or_error(pws_file, cmds);
+  int depth = atoi(cmds);
+
+  expect_next_token(pws_file, "INPUT", "Invalid BENES_NETWORK, INPUT expected.");
+
+  data_t* input =  new data_t[width];
+  data_t* intermediate = new data_t[width * (depth - 1)];
+  data_t* output =  new data_t[width];
+  switch_t* switches = new switch_t[width / 2 * depth];
+
+  const int num_elements = 4;
+
+  for (int i = 0; i < width; i++) {
+    next_token_or_error(pws_file, cmds);
+    // constant numbers are fine for voc.
+    input[i].addr = mpz_get_si(mpq_numref(voc(cmds, temp_q)));
+    next_token_or_error(pws_file, cmds);
+    input[i].timestamp = mpz_get_si(mpq_numref(voc(cmds, temp_q)));
+    next_token_or_error(pws_file, cmds);
+    input[i].type = mpz_get_si(mpq_numref(voc(cmds, temp_q)));
+    next_token_or_error(pws_file, cmds);
+    input[i].value = mpz_get_si(mpq_numref(voc(cmds, temp_q)));
+    //gmp_printf("%d ", input[i].addr);
+    //gmp_printf("%d ", input[i].timestamp);
+    //gmp_printf("%d ", input[i].type);
+    //gmp_printf("%d\n", input[i].value);
+  }
+
+  // compute the actual benes network here.
+
+  do_route(input, intermediate, output, switches, width, depth);
+
+  // assign the results to corresponding entries in proof vector
+
+  expect_next_token(pws_file, "INTERMEDIATE", "Invalid BENES_NETWORK, INTERMEDIATE expected.");
+  next_token_or_error(pws_file, cmds);
+  if (strcmp(cmds, "NULL") != 0) {
+    int intermediate_offset = atoi(cmds+1);
+
+    for (int i = 0; i < width * (depth - 1); i++) {
+      mpq_set_si(F1_q[F1_index[intermediate_offset + i * num_elements + 0]], intermediate[i].addr, 1);
+      mpq_set_si(F1_q[F1_index[intermediate_offset + i * num_elements + 1]], intermediate[i].timestamp, 1);
+      mpq_set_si(F1_q[F1_index[intermediate_offset + i * num_elements + 2]], intermediate[i].type, 1);
+      mpq_set_si(F1_q[F1_index[intermediate_offset + i * num_elements + 3]], intermediate[i].value, 1);
+    }
+  }
+
+  expect_next_token(pws_file, "OUTPUT", "Invalid BENES_NETWORK, OUTPUT expected.");
+  next_token_or_error(pws_file, cmds);
+  int output_offset = atoi(cmds+1);
+  for (int i = 0; i < width; i++) {
+    mpq_set_si(F1_q[F1_index[output_offset + i * num_elements + 0]], output[i].addr, 1);
+    mpq_set_si(F1_q[F1_index[output_offset + i * num_elements + 1]], output[i].timestamp, 1);
+    mpq_set_si(F1_q[F1_index[output_offset + i * num_elements + 2]], output[i].type, 1);
+    mpq_set_si(F1_q[F1_index[output_offset + i * num_elements + 3]], output[i].value, 1);
+    //gmp_printf("%d ", output[i].addr);
+    //gmp_printf("%d ", output[i].timestamp);
+    //gmp_printf("%d ", output[i].type);
+    //gmp_printf("%d\n", output[i].value);
+  }
+
+  expect_next_token(pws_file, "SWITCH", "Invalid BENES_NETWORK, SWITCH expected.");
+  next_token_or_error(pws_file, cmds);
+  int switches_offset = atoi(cmds+1);
+  for (int i = 0; i < width / 2 * depth; i++) {
+    if (switches[i].swap) {
+      mpq_set_si(F1_q[F1_index[switches_offset + i]], 1, 1);
+    } else {
+      mpq_set_si(F1_q[F1_index[switches_offset + i]], 0, 1);
+    }
+  }
+}
+
 /**
   The computation may elect to simply execute a PWS file (prover work sheet).
   This routine parses a PWS file (filename in a C-string) and parses it.
@@ -826,7 +1188,6 @@ void ComputationProver::compute_from_pws(const char* pws_filename) {
       expect_next_token(pws_file, "Y", "Invalid !=");
       next_token_or_error(pws_file, cmds);
       mpq_t& Y = voc(cmds, temp_q);
-
       if (mpq_equal(X1, X2)) {
         mpq_set_ui(M, 0, 1);
         mpq_set_ui(Y, 0, 1);
@@ -850,13 +1211,19 @@ void ComputationProver::compute_from_pws(const char* pws_filename) {
       mpq_t& X2 = voc(cmds,temp_q2);
       if (strcmp(tok, "/") == 0) {
         //Exact division
-        mpq_div(Y,X1,X2);
+        if (mpq_sgn(X2) != 0) {
+          mpq_div(Y,X1,X2);
+        }
       } else if (strcmp(tok, "/I") == 0) {
-        mpz_tdiv_q(mpq_numref(Y), mpq_numref(X1), mpq_numref(X2));
-        mpz_set_ui(mpq_denref(Y),1);
+        if (mpq_sgn(X2) != 0) {
+          mpz_tdiv_q(mpq_numref(Y), mpq_numref(X1), mpq_numref(X2));
+          mpz_set_ui(mpq_denref(Y),1);
+        }
       } else if (strcmp(tok, "%I") == 0) {
-        mpz_tdiv_r(mpq_numref(Y), mpq_numref(X1), mpq_numref(X2));
-        mpz_set_ui(mpq_denref(Y),1);
+        if (mpq_sgn(X2) != 0) {
+          mpz_tdiv_r(mpq_numref(Y), mpq_numref(X1), mpq_numref(X2));
+          mpz_set_ui(mpq_denref(Y),1);
+        }
       }
     } else if (strcmp(tok, "SI") == 0) {
       //Split into bits (big endian, see implementation for format)
@@ -891,6 +1258,14 @@ void ComputationProver::compute_from_pws(const char* pws_filename) {
         cout << "ASSERT_ZERO FAILED: " << var << endl;
         ////exit(1);
       }
+    } else if (strcmp(tok, "RAMGET_FAST") == 0) {
+      compute_fast_ramget(pws_file);
+    } else if (strcmp(tok, "RAMPUT_FAST") == 0) {
+      compute_fast_ramput(pws_file);
+    } else if (strcmp(tok, "BENES_NETWORK") == 0) {
+      compute_benes_network(pws_file);
+    } else if (strcmp(tok, "EXO_COMPUTE") == 0) {
+      compute_exo_compute(pws_file);
     } else {
       gmp_printf("Unrecognized token: %s\n", tok);
     }

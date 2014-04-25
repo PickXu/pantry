@@ -499,8 +499,8 @@ void Crypto::dot_product_simel_enc(uint32_t size, mpz_t *q, mpz_t *d, mpz_t outp
     for (int i=0; i<id; i++)
       base = base + sizes[i];
 
-    gmpmee_spowm_block(priv_output, &q[base], &d[base], sizes[id], p, 6);
-    gmpmee_spowm_block(priv_output2, &q[size+base], &d[base], sizes[id], p, 6);
+    gmpmee_spowm_block(priv_output, &q[base], &d[base], sizes[id], p, 5);
+    gmpmee_spowm_block(priv_output2, &q[size+base], &d[base], sizes[id], p, 5);
 
     #pragma omp critical
     {

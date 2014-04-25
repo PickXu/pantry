@@ -160,6 +160,7 @@ public class ZCC {
       AssignmentStatement.typeCheckWarns = true;
     }
 
+    // p stands for profile
     boolean doProfile = job.contains("p");
     if (doProfile) {
       DependencyProfile dp = new DependencyProfile();
@@ -168,6 +169,7 @@ public class ZCC {
     }
 
     Optimizer.setFirstPass(false);
+    // c stands for compile
     if (job.contains("c")) {
       //If profile is available, read it in.
       if (profilingFile != null) {
@@ -180,6 +182,7 @@ public class ZCC {
         if (verbose)
           System.out.println("Using variable dependencies from profile " + profilingFile);
 
+        // construct compiled statement from circuit file and profiling information
         computation = new CompiledStatement(profile, priorCircuit_);
 
         if (verbose)
@@ -223,6 +226,7 @@ public class ZCC {
           // compile from C file
           CCompiler compiler = new CCompiler(file, cstdarithtruncate);
           // Does its own error checking.
+          // call c compiler to compile the program for the first pass.
           compiler.compileProgram(program);
         } else {
           String[] extension = fileName.split("\\.");
@@ -237,6 +241,7 @@ public class ZCC {
       }
     }
 
+    // w means write circuit
     if (job.contains("w")) { // write circuit
       PrintWriter circuit = new PrintWriter(new FileWriter(circuitFile));
       if (verbose)
@@ -247,8 +252,11 @@ public class ZCC {
       Program.resetCounter(0);
       Optimizer.initOptimizer();
       AssignmentStatement.doRedundantVarAnalysisForAllVariables = job.contains("r");
+      // m means combine expression
       AssignmentStatement.combineExpressions = job.contains("m");
+      // f means remove fraction
       AssignmentStatement.removeFractions = job.contains("f");
+      // call toAssignmentStatements converts statements to circuit format.
       computation.toAssignmentStatements(sb);
       sb.flush();
       circuit.close();

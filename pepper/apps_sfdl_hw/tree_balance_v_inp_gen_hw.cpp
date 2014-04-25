@@ -40,15 +40,32 @@ void tree_balanceVerifierInpGenHw::create_input(mpq_t* input_q, int num_inputs)
     for(int i = 0; i < number_of_hash_elements; i++) {
       mpq_set_ui(input_q[i], input_ptr[i], 1);
     }
-    mpq_set_ui(input_q[number_of_hash_elements], 1, 1);
-    mpq_set_ui(input_q[number_of_hash_elements + 1], 0, 1);
+    FILE* path_file = fopen(FOLDER_PERSIST_STATE "/tree_path", "r");
+    int path, path_depth;
+    if (path_file != NULL) {
+      fscanf(path_file, "%d %d", &path, &path_depth);
+    } else {
+      path_depth = 1;
+      path = 0;
+    }
+    mpq_set_ui(input_q[number_of_hash_elements], path_depth, 1);
+    mpq_set_ui(input_q[number_of_hash_elements + 1], path, 1);
 
     //dump_vector(num_inputs, input_q, "db_handle", FOLDER_PERSIST_STATE);
   } else {
     // import the root hash from a place.
     int number_of_hash_elements = sizeof(hash_t) / sizeof(uint64_t);
     load_vector(number_of_hash_elements, input_q, "db_handle", FOLDER_PERSIST_STATE);
-    mpq_set_ui(input_q[number_of_hash_elements], 1, 1);
-    mpq_set_ui(input_q[number_of_hash_elements + 1], 0, 1);
+
+    FILE* path_file = fopen(FOLDER_PERSIST_STATE "/tree_path", "r");
+    int path, path_depth;
+    if (path_file != NULL) {
+      fscanf(path_file, "%d %d", &path, &path_depth);
+    } else {
+      path_depth = 1;
+      path = 0;
+    }
+    mpq_set_ui(input_q[number_of_hash_elements], path_depth, 1);
+    mpq_set_ui(input_q[number_of_hash_elements + 1], path, 1);
   }
 }

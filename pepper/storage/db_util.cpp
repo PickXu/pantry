@@ -3,6 +3,7 @@
 #include <leveldb/db.h>
 #include <leveldb/options.h>
 #include <leveldb/write_batch.h>
+#include <storage/db_block_store.h>
 #include "db_util.h"
 #include "external_sort.h"
 
@@ -12,9 +13,12 @@
 
 #define my_hashput(buf, offset, hash, p_data) __my_hashput(buf, offset, hash, p_data, sizeof(*p_data))
 
+#define READONLY
+
 typedef struct key_value_pair {
   tree_key_t key;
   tree_value_t value;
+  uint32_t offset;
 } key_value_pair_t;
 
 typedef struct subtree_info {
@@ -22,6 +26,7 @@ typedef struct subtree_info {
   int right;
   int height;
   hash_t root;
+  uint32_t root_index;
 } subtree_info_t;
 
 void print_hash(hash_t* hash) {
@@ -38,7 +43,7 @@ void __my_hashput(char* buf, long& offset, hash_t* hash, void* data, long size_i
   offset += sizeof(hash_t);
   memcpy(buf + offset, data, size_in_bytes);
   offset += size_in_bytes;
-  if ((offset / (sizeof(hash_t) + size_in_bytes)) % 1000 == 0) {
+  if ((offset / (sizeof(hash_t) + size_in_bytes)) % 100000 == 0) {
     cout << "current offset " << offset << endl;
   }
 }
@@ -108,8 +113,7 @@ void generate_random_permutation_as_keys(int number_of_rows) {
   }
 }
 
-void generate_one_chunk_of_db_row(long offset, int chunk_id, int number_of_entries, long entry_size, const char* folder_name) {
-  //int j = i / entries_per_chunk;
+void generate_one_chunk_of_db_row(long offset, int chunk_id, int number_of_entries, long entry_size, const char* folder_name, const char* folder_state) {
   tree_key_t* average_buf = new tree_key_t[number_of_entries];
   tree_key_t* class_buf = new tree_key_t[number_of_entries];
   tree_key_t* age_buf = new tree_key_t[number_of_entries];
@@ -119,6 +123,8 @@ void generate_one_chunk_of_db_row(long offset, int chunk_id, int number_of_entri
   key_value_pair_t* class_kv_pairs_buf = new key_value_pair_t[number_of_entries];
   key_value_pair_t* age_kv_pairs_buf = new key_value_pair_t[number_of_entries];
   char* hash_to_rows_buf = new char[number_of_entries * entry_size];
+
+  Student_t* row_buf = new Student_t[number_of_entries];
 
   long buf_offset = 0;
 
@@ -131,57 +137,60 @@ void generate_one_chunk_of_db_row(long offset, int chunk_id, int number_of_entri
     load_array((char*)age_buf, number_of_entries * sizeof(tree_key_t), offset * sizeof(tree_key_t), "age_keys", folder_name);
   }
 
-#pragma omp parallel
-  {
-#pragma omp for
-    for (int k = 0; k < number_of_entries; k++) {
-      Student_t tempStudent;
-      hash_t tempHash;
+  for (int k = 0; k < number_of_entries; k++) {
+    Student_t tempStudent;
+    hash_t tempHash;
 
-      tempStudent.KEY = offset + k;
-      tempStudent.FName = 1298384231432L + rand();
-      tempStudent.LName = 2380943023039L + rand();
-      tempStudent.Major = 10 + (rand() % 30);
-      tempStudent.State = rand() % 50;
-      tempStudent.PhoneNum = 512800000 + rand();
-      tempStudent.Credits = 100 + rand();
-      tempStudent.Honored = 0;
+    tempStudent.KEY = offset + k;
+    tempStudent.FName = (uint64_t)rand() << 32 | (uint64_t)rand();
+    tempStudent.LName = (uint64_t)rand() << 32 | (uint64_t)rand();
+    tempStudent.Major = 10 + (rand() % 30);
+    tempStudent.State = rand() % 50;
+    tempStudent.PhoneNum = 512000000 + rand();
+    tempStudent.Credits = rand();
+    tempStudent.Honored = 0;
 
-      tempStudent.Average = average_buf[k];
-      tempStudent.Class = class_buf[k];
-      tempStudent.Age = age_buf[k];
-
-#pragma omp critical
-      {
-        my_hashput(hash_to_rows_buf, buf_offset, &tempHash, &tempStudent);
-      }
-
-      key_kv_pairs_buf[k].key = tempStudent.KEY;
-      key_kv_pairs_buf[k].value = tempHash;
-      average_kv_pairs_buf[k].key = tempStudent.Average;
-      average_kv_pairs_buf[k].value = tempHash;
-      class_kv_pairs_buf[k].key = tempStudent.Class;
-      class_kv_pairs_buf[k].value = tempHash;
-      age_kv_pairs_buf[k].key = tempStudent.Age;
-      age_kv_pairs_buf[k].value = tempHash;
+    for (uint32_t i = 0; i < sizeof(tempStudent.Address) / sizeof(uint64_t); i++) {
+      tempStudent.Address.address[i] = (uint64_t)rand() << 32 | (uint64_t) rand();
     }
+
+    tempStudent.Average = average_buf[k];
+    tempStudent.Class = class_buf[k];
+    tempStudent.Age = age_buf[k];
+
+    my_hashput(hash_to_rows_buf, buf_offset, &tempHash, &tempStudent);
+
+    key_kv_pairs_buf[k].key = tempStudent.KEY;
+    average_kv_pairs_buf[k].key = tempStudent.Average;
+    class_kv_pairs_buf[k].key = tempStudent.Class;
+    age_kv_pairs_buf[k].key = tempStudent.Age;
+
+    key_kv_pairs_buf[k].offset = average_kv_pairs_buf[k].offset = class_kv_pairs_buf[k].offset = age_kv_pairs_buf[k].offset = offset + k;
+    key_kv_pairs_buf[k].value = average_kv_pairs_buf[k].value = class_kv_pairs_buf[k].value = age_kv_pairs_buf[k].value = tempHash;
+    row_buf[k] = tempStudent;
   }
 
   // dump the chunk of key/value pairs onto disk.
-//#pragma omp critical
-  {
-    char filename[BUFLEN];
-    snprintf(filename, BUFLEN - 1, "%s_%d", "key_kv_pairs", chunk_id);
-    dump_array((char*)key_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
-    snprintf(filename, BUFLEN - 1, "%s_%d", "average_kv_pairs", chunk_id);
-    dump_array((char*)average_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
-    snprintf(filename, BUFLEN - 1, "%s_%d", "class_kv_pairs", chunk_id);
-    dump_array((char*)class_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
-    snprintf(filename, BUFLEN - 1, "%s_%d", "age_kv_pairs", chunk_id);
-    dump_array((char*)age_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
-    snprintf(filename, BUFLEN - 1, "%s_%d", "hash_to_rows", chunk_id);
-    dump_array((char*)hash_to_rows_buf, number_of_entries * entry_size, filename, folder_name);
-  }
+  char filename[BUFLEN];
+
+#ifndef READONLY
+  snprintf(filename, BUFLEN - 1, "%s_%d", "key_kv_pairs", chunk_id);
+  dump_array((char*)key_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
+#else
+  snprintf(filename, BUFLEN - 1, "%s_%d", "average_kv_pairs", chunk_id);
+  dump_array((char*)average_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
+  snprintf(filename, BUFLEN - 1, "%s_%d", "class_kv_pairs", chunk_id);
+  dump_array((char*)class_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
+  snprintf(filename, BUFLEN - 1, "%s_%d", "age_kv_pairs", chunk_id);
+  dump_array((char*)age_kv_pairs_buf, number_of_entries * sizeof(key_value_pair_t), filename, folder_name);
+#endif
+
+  dump_array((char*)row_buf, number_of_entries * sizeof(Student_t), offset * sizeof(Student_t), "/block_stores/rows.db", folder_state);
+#ifndef USE_DB_BLOCK_STORE
+  snprintf(filename, BUFLEN - 1, "%s_%d", "hash_to_rows", chunk_id);
+  dump_array((char*)hash_to_rows_buf, number_of_entries * entry_size, filename, folder_name);
+#endif
+
   delete[] average_buf;
   delete[] class_buf;
   delete[] age_buf;
@@ -189,12 +198,13 @@ void generate_one_chunk_of_db_row(long offset, int chunk_id, int number_of_entri
   delete[] average_kv_pairs_buf;
   delete[] class_kv_pairs_buf;
   delete[] age_kv_pairs_buf;
+  delete[] row_buf;
   delete[] hash_to_rows_buf;
 }
 
 // generate rows for the db and store key-value pairs (where the key is the
 // indexed column's value and the value is the hash of the row)
-int generate_db_rows(int number_of_rows, int number_of_chunks, int entries_per_chunk) {
+int generate_db_rows(int number_of_rows, int number_of_chunks, int entries_per_chunk, const char* folder_state) {
   cout << "creating rows" << endl;
 
   long entry_size = sizeof(hash_t) + sizeof(Student_t);
@@ -208,7 +218,7 @@ int generate_db_rows(int number_of_rows, int number_of_chunks, int entries_per_c
       if (number_of_rows - i < entries_per_chunk) {
         actual_entries_per_chunk = number_of_rows - i;
       }
-      generate_one_chunk_of_db_row(i, chunk_id, actual_entries_per_chunk, entry_size, FOLDER_TMP);
+      generate_one_chunk_of_db_row(i, chunk_id, actual_entries_per_chunk, entry_size, FOLDER_TMP, folder_state);
 #pragma omp critical
       {
         finished_chunks++;
@@ -216,22 +226,23 @@ int generate_db_rows(int number_of_rows, int number_of_chunks, int entries_per_c
       }
     }
   }
-  external_sort("hash_to_rows", FOLDER_TMP, finished_chunks, entry_size, hash_t_comparator, false);
   return finished_chunks;
 }
 
 // sort each file containing key-value pairs
 void sort_indices(int number_of_rows, int number_of_chunks, int entries_per_chunk) {
   cout << "sorting" << endl;
-  long entry_size = sizeof(int) + sizeof(hash_t);
+  long entry_size = sizeof(key_value_pair_t);
   // sort each chunk in memory, probably 1 million rows each and then merge from disk
 //#pragma omp parallel sections
   {
+#ifndef READONLY
 //#pragma omp section
     {
       cout << "sorting key index" << endl;
       external_sort("key_kv_pairs", FOLDER_TMP, number_of_chunks, entry_size, int_comparator, false);
     }
+#else
 //#pragma omp section
     {
       cout << "sorting average index" << endl;
@@ -247,6 +258,7 @@ void sort_indices(int number_of_rows, int number_of_chunks, int entries_per_chun
       cout << "sorting age index" << endl;
       external_sort("age_kv_pairs", FOLDER_TMP, number_of_chunks, entry_size, int_comparator, false);
     }
+#endif
   }
 }
 
@@ -410,14 +422,7 @@ int partition_tree_to_file(const char* tree_name, const char* folder_name, int t
 
 int build_tree_bottom_up(tree_t* tree, const char* tree_name, const char* kv_pairs_filename, const char* folder_name, int tree_size, int max_depth) {
   int max_number_of_subtrees = (2 << max_depth);
-  //hash_t top_node_hashes[max_number_of_subtrees];
-  //int left[max_number_of_subtrees];
-  //int right[max_number_of_subtrees];
-  //int height[max_number_of_subtrees];
-  //subtree_info_t subtrees[max_number_of_subtrees];
-  //int number_of_subtrees = 0;
 
-  //partition_tree(number_of_subtrees, subtrees, 0, size - 1, 1, max_depth);
   int number_of_subtrees = partition_tree_to_file(tree_name, folder_name, tree_size, max_depth);
   // create sub trees;
   int finished_chunks = 0;
@@ -450,6 +455,9 @@ Student_handle_t build_index_trees(int number_of_rows, int max_depth) {
   tree_t Class_index;
   tree_t Age_index;
 
+  Student_handle_t handle;
+  memset(&handle, 0, sizeof(Student_handle_t));
+
   long entry_size = sizeof(hash_t) + sizeof(tree_node_t);
 
   // Up to this point, the index is already prepared as a sorted array stored
@@ -459,35 +467,31 @@ Student_handle_t build_index_trees(int number_of_rows, int max_depth) {
   // build trees from bottom up
 //#pragma omp parallel sections
   {
+#ifndef READONLY
 //#progma omp section
     {
       int number_of_chunks = build_tree_bottom_up(&KEY_index, "key_tree", "key_kv_pairs", FOLDER_TMP, number_of_rows, max_depth);
-      external_sort("key_tree", FOLDER_TMP, number_of_chunks, entry_size, hash_t_comparator, false);
+      handle.KEY_index = KEY_index.root;
     }
+#else
 //#pragma omp section
     {
       int number_of_chunks = build_tree_bottom_up(&Average_index, "average_tree", "average_kv_pairs", FOLDER_TMP, number_of_rows, max_depth);
-      external_sort("average_tree", FOLDER_TMP, number_of_chunks, entry_size, hash_t_comparator, false);
+      handle.Average_index = Average_index.root;
     }
 //#pragma omp section
     {
       int number_of_chunks = build_tree_bottom_up(&Class_index, "class_tree", "class_kv_pairs", FOLDER_TMP, number_of_rows, max_depth);
-      external_sort("class_tree", FOLDER_TMP, number_of_chunks, entry_size, hash_t_comparator, false);
+      handle.Class_index = Class_index.root;
     }
 //#pragma omp section
     {
       int number_of_chunks = build_tree_bottom_up(&Age_index, "age_tree", "age_kv_pairs", FOLDER_TMP, number_of_rows, max_depth);
-      external_sort("age_tree", FOLDER_TMP, number_of_chunks, entry_size, hash_t_comparator, false);
+      handle.Age_index = Age_index.root;
     }
+#endif
   }
 
-  Student_handle_t handle;
-  memset(&handle, 0, sizeof(Student_handle_t));
-
-  handle.KEY_index = KEY_index.root;
-  handle.Average_index = Average_index.root;
-  handle.Class_index = Class_index.root;
-  handle.Age_index = Age_index.root;
   return handle;
 }
 
@@ -540,17 +544,36 @@ void write_one_batch(leveldb::WriteBatch* batch, leveldb::DB* db) {
   batch->Clear();
 }
 
-void merge_into_one_db(const char* folder_state, const char* bstore_file_name) {
+void merge_into_one_db(const char* folder_state, int number_of_chunks, const char* bstore_file_name) {
   char db_file_path[BUFLEN];
+
   snprintf(db_file_path, BUFLEN - 1, "%s/block_stores/", folder_state);
   recursive_mkdir(db_file_path, S_IRWXU);
 
   snprintf(db_file_path, BUFLEN - 1, "%s/block_stores/%s", folder_state, bstore_file_name);
   leveldb::DB* db = open_leveldb(db_file_path);
 
-  int number_of_chunks = 5;
-  chunk_t chunks[number_of_chunks];
+  int entry_size = sizeof(hash_t) + sizeof(Student_t);
+  external_sort("hash_to_rows", FOLDER_TMP, number_of_chunks, entry_size, hash_t_comparator, false);
 
+  entry_size = sizeof(hash_t) + sizeof(tree_node_t);
+
+#ifndef READONLY
+  external_sort("key_tree", FOLDER_TMP, number_of_chunks + 1, entry_size, hash_t_comparator, false);
+
+  int number_of_parts = 2;
+  chunk_t chunks[number_of_parts];
+  chunks[0].entry_size = sizeof(hash_t) + sizeof(Student_t);
+  chunks[0].filename = "hash_to_rows";
+  chunks[1].entry_size = sizeof(hash_t) + sizeof(tree_node_t);
+  chunks[1].filename = "key_tree";
+#else
+  external_sort("average_tree", FOLDER_TMP, number_of_chunks + 1, entry_size, hash_t_comparator, false);
+  external_sort("class_tree", FOLDER_TMP, number_of_chunks + 1, entry_size, hash_t_comparator, false);
+  external_sort("age_tree", FOLDER_TMP, number_of_chunks + 1, entry_size, hash_t_comparator, false);
+
+  int number_of_parts = 4;
+  chunk_t chunks[number_of_parts];
   chunks[0].entry_size = sizeof(hash_t) + sizeof(Student_t);
   chunks[0].filename = "hash_to_rows";
   chunks[1].entry_size = sizeof(hash_t) + sizeof(tree_node_t);
@@ -559,17 +582,16 @@ void merge_into_one_db(const char* folder_state, const char* bstore_file_name) {
   chunks[2].filename = "class_tree";
   chunks[3].entry_size = sizeof(hash_t) + sizeof(tree_node_t);
   chunks[3].filename = "age_tree";
-  chunks[4].entry_size = sizeof(hash_t) + sizeof(tree_node_t);
-  chunks[4].filename = "key_tree";
+#endif
 
-  for (int i = 0; i < number_of_chunks; i++) {
+  for (int i = 0; i < number_of_parts; i++) {
     chunks[i].buffer = new char[BUFSIZE * chunks[i].entry_size];
     char filename[BUFLEN];
     snprintf(filename, BUFLEN - 1, "%s/%s", FOLDER_TMP, chunks[i].filename);
     chunks[i].filesize = get_file_size(filename);
     chunks[i].offset = 0;
   }
-  for (int i = 0; i < number_of_chunks; i++) {
+  for (int i = 0; i < number_of_parts; i++) {
     read_one_chunk(&chunks[i]);
   }
 
@@ -588,7 +610,7 @@ void merge_into_one_db(const char* folder_state, const char* bstore_file_name) {
   while (true) {
     smallest_entry = NULL;
     smallest_entry_index = -1;
-    for (int i = 0; i < number_of_chunks; i++) {
+    for (int i = 0; i < number_of_parts; i++) {
       if (chunks[i].current_pointer != NULL) {
         if (smallest_entry_index == -1 || hash_t_comparator(chunks[i].current_pointer, smallest_entry) < 0) {
           smallest_entry = chunks[i].current_pointer;
@@ -599,7 +621,7 @@ void merge_into_one_db(const char* folder_state, const char* bstore_file_name) {
     // this means all chunks are over.
     if (smallest_entry_index == -1) {
       cout << "all files reached their end. finishing up." << endl;
-      for (int i = 0; i < number_of_chunks; i++) {
+      for (int i = 0; i < number_of_parts; i++) {
         cout << chunks[i].filename << " is at offset " << chunks[i].offset << endl;
       }
       break;
@@ -648,9 +670,11 @@ void merge_into_one_db(const char* folder_state, const char* bstore_file_name) {
   cout << number_of_records << " records finished" << endl;
 
   // clean up
-  for (int i = 0; i < number_of_chunks; i++) {
+  for (int i = 0; i < number_of_parts; i++) {
     delete[] chunks[i].buffer;
   }
+
+  delete[] write_buf;
 
   delete db;
 }
@@ -672,6 +696,7 @@ void inorder_traverse(hash_t* hash) {
 
     hashget(&node, hash);
     //cout << node.key << endl;
+
     Student_t student;
     hashget(&student, &node.values[0]);
     if(node.height != height(hash)) {
@@ -682,6 +707,7 @@ void inorder_traverse(hash_t* hash) {
       cout << "not balanced." << endl;
       exit(1);
     }
+
     inorder_traverse(&(node.left));
     if (x + 1 != node.key) {
       cout << "not a searchable binary tree. " << x + 1 << " " << node.key << endl;
@@ -718,13 +744,14 @@ void test_trees(Student_handle_t handle, int number_of_rows, const char* folder_
   tree_t Class_index;
   tree_t Age_index;
 
+#ifndef READONLY
   KEY_index.root = handle.KEY_index;
+  cout << "testing key index" << endl;
+  //test_tree(&KEY_index, number_of_rows);
+#else
   Average_index.root = handle.Average_index;
   Class_index.root = handle.Class_index;
   Age_index.root = handle.Age_index;
-
-  cout << "testing key index" << endl;
-  test_tree(&KEY_index, number_of_rows);
   {
     cout << "testing average index" << endl;
     Student_t tempStudent;
@@ -755,6 +782,7 @@ void test_trees(Student_handle_t handle, int number_of_rows, const char* folder_
     }
     test_tree(&Age_index, number_of_rows);
   }
+#endif
 
   deleteBlockStoreAndRAM();
 
@@ -768,12 +796,15 @@ void setup(const char* folder_state, const char* bstore_file_name) {
   snprintf(buf, BUFLEN - 1, "rm -rf %s/block_stores/*", folder_state);
   assert(system(buf) == 0);
 
-  mkdir(FOLDER_TMP, S_IRWXU);
-  mkdir(folder_state, S_IRWXU);
+  recursive_mkdir(FOLDER_TMP, S_IRWXU);
+  recursive_mkdir(folder_state, S_IRWXU);
+
+  snprintf(buf, BUFLEN - 1, "%s/block_stores", folder_state);
+  recursive_mkdir(buf, S_IRWXU);
 
   srand(time(NULL));
   omp_set_dynamic(0);
-  omp_set_num_threads(32);
+  omp_set_num_threads(8);
 }
 
 void clean_up() {
@@ -799,7 +830,7 @@ Student_handle_t create_db(int number_of_rows, int number_of_chunks, int max_dep
   generate_random_permutation_as_keys(number_of_rows);
 
   // generate the rows of the DB.
-  number_of_chunks = generate_db_rows(number_of_rows, number_of_chunks, entries_per_chunk);
+  number_of_chunks = generate_db_rows(number_of_rows, number_of_chunks, entries_per_chunk, folder_state);
 
   // sort the index
   sort_indices(number_of_rows, number_of_chunks, entries_per_chunk);
@@ -808,12 +839,368 @@ Student_handle_t create_db(int number_of_rows, int number_of_chunks, int max_dep
   Student_handle_t handle = build_index_trees(number_of_rows, max_depth);
 
   // merge all sorted key-value pairs into a single levelDB.
-  merge_into_one_db(folder_state, bstore_file_name);
+  merge_into_one_db(folder_state, number_of_chunks, bstore_file_name);
 
 //#ifdef DEBUG
   test_trees(handle, number_of_rows, folder_state, bstore_file_name);
 //#endif
 
   clean_up();
+  return handle;
+}
+
+void merge_compressed_trees(const char* tree_name, const char* kv_pairs_filename, const char* folder_name, const char* folder_state, int number_of_subtrees) {
+  subtree_info_t subtrees[number_of_subtrees];
+  tree_node_t top_nodes[number_of_subtrees];
+  compressed_tree_node_t c_nodes[number_of_subtrees];
+
+  for (int i = 0; i < number_of_subtrees; i++) {
+    char full_filename[BUFLEN];
+    snprintf(full_filename, BUFLEN - 1, "%s_%d_info", tree_name, i);
+    load_array((char*)&subtrees[i], sizeof(subtree_info_t), full_filename, folder_name);
+  }
+
+  ifstream input_fp;
+  open_file_read(input_fp, kv_pairs_filename, folder_name);
+
+  char output_filename[BUFLEN];
+  snprintf(output_filename, BUFLEN - 1, "%s_%d", tree_name, number_of_subtrees);
+
+  long entry_size = sizeof(hash_t) + sizeof(tree_node_t);
+
+  number_of_subtrees = number_of_subtrees / 2;
+  while (number_of_subtrees > 0) {
+    for (int i = 0; i < number_of_subtrees; i++) {
+      int mid = subtrees[i * 2].right + 1;
+      subtrees[i].left = subtrees[i * 2].left;
+      subtrees[i].right = subtrees[i * 2 + 1].right;
+
+      key_value_pair_t kv_pair;
+      input_fp.seekg(mid * sizeof(key_value_pair_t));
+      if (!input_fp.read((char*)&kv_pair, sizeof(key_value_pair_t))) {
+        cout << "Error reading from " << kv_pairs_filename << endl;
+        exit(1);
+      }
+
+      c_nodes[i].key = top_nodes[i].key = kv_pair.key;
+      c_nodes[i].num_values = top_nodes[i].num_values = 1;
+      top_nodes[i].values[0] = kv_pair.value;
+      c_nodes[i].values[0] = kv_pair.offset;
+
+#ifdef AVL_TREE_H_
+      c_nodes[i].height_left = top_nodes[i].height_left = subtrees[i * 2].height;
+      c_nodes[i].height_right = top_nodes[i].height_right = subtrees[i * 2 + 1].height;
+      c_nodes[i].height = top_nodes[i].height = MAX(top_nodes[i].height_left, top_nodes[i].height_right) + 1;
+      subtrees[i].height = top_nodes[i].height;
+#endif
+
+      top_nodes[i].left = subtrees[i * 2].root;
+      top_nodes[i].right = subtrees[i * 2 + 1].root;
+      c_nodes[i].left = subtrees[i * 2].root_index;
+      c_nodes[i].right = subtrees[i * 2 + 1].root_index;
+
+      // get hash to this node
+      __hashbits(&(subtrees[i].root), &(top_nodes[i]), sizeof(tree_node_t));
+
+      // write hash and compressed tree node
+      subtrees[i].root_index = mid + 1;
+
+      dump_array((char*)&c_nodes[i], sizeof(compressed_tree_node_t), subtrees[i].root_index * sizeof(compressed_tree_node_t), "/block_stores/index.db", folder_state);
+      dump_array((char*)&subtrees[i].root, sizeof(hash_t), subtrees[i].root_index * sizeof(hash_t), "/block_stores/hash.db", folder_state);
+    }
+    number_of_subtrees /= 2;
+  }
+  input_fp.close();
+
+  snprintf(output_filename, BUFLEN - 1, "%s_handle", tree_name);
+  dump_array((char*)&subtrees[0].root, sizeof(hash_t), output_filename, folder_name);
+
+  compressed_tree_node_t root;
+  load_array((char*)&root, sizeof(compressed_tree_node_t), subtrees[0].root_index * sizeof(compressed_tree_node_t), "/block_stores/index.db", folder_state);
+  snprintf(output_filename, BUFLEN - 1, "%s_root", tree_name);
+  dump_array((char*)&root, sizeof(compressed_tree_node_t), output_filename, folder_name);
+}
+
+hash_t build_compressed_subtree(compressed_tree_node_t* c_node_buf, hash_t* hash_buf, long& offset, long& index_offset, key_value_pair_t* kv_pairs, int left, int right, int* height) {
+  tree_node_t node;
+  compressed_tree_node_t c_node;
+
+  if (left > right) {
+    *height = 0;
+    return *NULL_HASH;
+  }
+
+  int mid = left + (right - left) / 2;
+  int hl, hr;
+
+  node.left = build_compressed_subtree(c_node_buf, hash_buf, offset, index_offset, kv_pairs, left, mid - 1, &hl);
+  if (hl != 0) c_node.left = index_offset - 1; else c_node.left = 0;
+  node.right = build_compressed_subtree(c_node_buf, hash_buf, offset, index_offset, kv_pairs, mid + 1, right, &hr);
+  if (hr != 0) c_node.right = index_offset - 1; else c_node.right = 0;
+
+  c_node.key = node.key = kv_pairs[mid].key;
+  c_node.num_values = node.num_values = 1;
+  node.values[0] = kv_pairs[mid].value;
+  c_node.values[0] = kv_pairs[mid].offset;
+
+#ifdef AVL_TREE_H_
+  c_node.height = node.height = MAX(hl, hr) + 1;
+  c_node.height_left = node.height_left = hl;
+  c_node.height_right = node.height_right = hr;
+  if (height != NULL) {
+    *height = node.height;
+  }
+#endif
+
+  hash_t hash;
+  __hashbits(&hash, &node, sizeof(tree_node_t));
+  // write the compressed tree node into file
+  c_node_buf[offset] = c_node;
+  hash_buf[offset] = hash;
+  index_offset++;
+  offset++;
+
+  return hash;
+}
+
+void build_one_compressed_subtree_bottom_up(const char* tree_name, int subtree_id, long existing_index_entries, const char* kv_pairs_filename, const char* folder_name, const char* folder_state) {
+  subtree_info_t subtree_info;
+  char full_filename[BUFLEN];
+  snprintf(full_filename, BUFLEN - 1, "%s_%d_info", tree_name, subtree_id);
+  load_array((char*)&subtree_info, sizeof(subtree_info_t), full_filename, folder_name);
+
+  long offset = 0;
+  // 0 is reserved for NULL tree node.
+  long index_offset = subtree_info.left + existing_index_entries;
+
+  int subtree_size = subtree_info.right - subtree_info.left + 1;
+  long entry_size = sizeof(hash_t) + sizeof(tree_node_t);
+  //cout << "subtree size " << subtree_size << endl;
+
+  compressed_tree_node_t* c_node_buf = new compressed_tree_node_t[subtree_size];
+  hash_t* hash_buf = new hash_t[subtree_size];
+
+  // read part of a sorted array and create a subtree out of it.
+  key_value_pair_t* kv_pairs = new key_value_pair_t[subtree_size];
+  // the seek and read should be atomic because other current threads might
+  // also want to seek and read the same file. Interleaving between seek
+  // and read would result in reading wrong data
+  load_array((char*)kv_pairs, subtree_size * sizeof(key_value_pair_t), subtree_info.left * sizeof(key_value_pair_t), kv_pairs_filename, folder_name);
+  subtree_info.root = build_compressed_subtree(c_node_buf, hash_buf, offset, index_offset, kv_pairs, 0, subtree_size - 1, &(subtree_info.height));
+  subtree_info.root_index = index_offset - 1;
+
+  snprintf(full_filename, BUFLEN - 1, "%s_%d_info", tree_name, subtree_id);
+  dump_array((char*)&subtree_info, sizeof(subtree_info_t), full_filename, folder_name);
+
+#pragma omp critical
+  {
+    dump_array((char*)c_node_buf, subtree_size * sizeof(compressed_tree_node_t), (subtree_info.left + existing_index_entries) * sizeof(compressed_tree_node_t), "/block_stores/index.db", folder_state);
+    dump_array((char*)hash_buf, subtree_size * sizeof(hash_t), (subtree_info.left + existing_index_entries) * sizeof(hash_t), "/block_stores/hash.db", folder_state);
+  }
+
+  delete[] kv_pairs;
+  delete[] c_node_buf;
+  delete[] hash_buf;
+}
+
+int build_compressed_tree_bottom_up(tree_t* tree, const char* tree_name, const char* kv_pairs_filename, const char* folder_name, const char* folder_state, long existing_index_entries, int tree_size, int max_depth) {
+  int max_number_of_subtrees = (2 << max_depth);
+
+  int number_of_subtrees = partition_tree_to_file(tree_name, folder_name, tree_size, max_depth);
+  // create sub trees;
+  int finished_chunks = 0;
+
+
+#pragma omp parallel
+  {
+#pragma omp for
+    for (int i = 0; i < number_of_subtrees; i++) {
+      build_one_compressed_subtree_bottom_up(tree_name, i, existing_index_entries, kv_pairs_filename, folder_name, folder_state);
+#pragma omp critical
+      {
+        finished_chunks++;
+        printf("building %s: finished subtrees = %d progress = %0.1f%%\n", tree_name, finished_chunks, 100.0 * finished_chunks/number_of_subtrees);
+      }
+    }
+  }
+
+  // merge sub trees into one
+  merge_compressed_trees(tree_name, kv_pairs_filename, folder_name, folder_state, number_of_subtrees);
+  char handle_filename[BUFLEN];
+  snprintf(handle_filename, BUFLEN - 1, "%s_handle", tree_name);
+  load_array((char*)&(tree->root), sizeof(hash_t), handle_filename, folder_name);
+  return number_of_subtrees + 1;
+}
+
+void write_bootstrap_info_into_leveldb(const char* tree_name, leveldb::DB* db) {
+  char filename[BUFLEN];
+  hash_t root_hash;
+  compressed_tree_node_t c_node;
+
+  snprintf(filename, BUFLEN - 1, "%s_handle", tree_name);
+  load_array((char*)&root_hash, sizeof(hash_t), filename, FOLDER_TMP);
+  snprintf(filename, BUFLEN - 1, "%s_root", tree_name);
+  load_array((char*)&c_node, sizeof(compressed_tree_node_t), filename, FOLDER_TMP);
+
+  leveldb::Slice key_slice((char*)&root_hash, sizeof(hash_t));
+  leveldb::Slice value_slice((char*)&c_node, sizeof(compressed_tree_node_t));
+
+  db->Put(leveldb::WriteOptions(), key_slice, value_slice);
+}
+
+Student_handle_t build_compressed_index_trees(int number_of_rows, int max_depth, const char* folder_state, const char* bstore_file_name) {
+  // now we have key to hash mapping for all indices
+  // we need to create a compressed binary tree out of these sorted indices
+
+  cout << "building tree" << endl;
+
+  tree_t KEY_index;
+  tree_t Average_index;
+  tree_t Class_index;
+  tree_t Age_index;
+
+  long entry_size = sizeof(hash_t) + sizeof(tree_node_t);
+
+  Student_handle_t handle;
+  memset(&handle, 0, sizeof(Student_handle_t));
+
+  // write bootstrap information into leveldb
+  char db_file_path[BUFLEN];
+
+  snprintf(db_file_path, BUFLEN - 1, "%s/block_stores/", folder_state);
+  recursive_mkdir(db_file_path, S_IRWXU);
+
+  snprintf(db_file_path, BUFLEN - 1, "%s/block_stores/%s", folder_state, bstore_file_name);
+  leveldb::DB* db = open_leveldb(db_file_path);
+
+  compressed_tree_node_t c_node;
+  memset(&c_node, 0, sizeof(compressed_tree_node_t));
+  dump_array((char*)&c_node, sizeof(compressed_tree_node_t), 0, "/block_stores/index.db", folder_state);
+  dump_array((char*)NULL_HASH, sizeof(hash_t), 0, "/block_stores/hash.db", folder_state);
+
+  long index_file_offset = 1;
+
+  // Up to this point, the index is already prepared as a sorted array stored
+  // in a giant file. We next will create a compressed self-certifying binary search tree
+  // out of it.
+#ifndef READONLY
+  build_compressed_tree_bottom_up(&KEY_index, "key_tree", "key_kv_pairs", FOLDER_TMP, folder_state, index_file_offset, number_of_rows, max_depth);
+  handle.KEY_index = KEY_index.root;
+  write_bootstrap_info_into_leveldb("key_tree", db);
+#else
+  build_compressed_tree_bottom_up(&Average_index, "average_tree", "average_kv_pairs", FOLDER_TMP, folder_state, index_file_offset, number_of_rows, max_depth);
+  index_file_offset += number_of_rows;
+  build_compressed_tree_bottom_up(&Class_index, "class_tree", "class_kv_pairs", FOLDER_TMP, folder_state, index_file_offset, number_of_rows, max_depth);
+  index_file_offset += number_of_rows;
+  build_compressed_tree_bottom_up(&Age_index, "age_tree", "age_kv_pairs", FOLDER_TMP, folder_state, index_file_offset, number_of_rows, max_depth);
+
+  handle.Average_index = Average_index.root;
+  handle.Class_index = Class_index.root;
+  handle.Age_index = Age_index.root;
+  write_bootstrap_info_into_leveldb("average_tree", db);
+  write_bootstrap_info_into_leveldb("class_tree", db);
+  write_bootstrap_info_into_leveldb("age_tree", db);
+#endif
+
+  delete db;
+
+  return handle;
+}
+
+void test_compressed_trees(Student_handle_t handle, int number_of_rows, const char* folder_state, const char* bstore_file_name) {
+  cout << "testing tree" << endl;
+
+  char db_file_path[BUFLEN];
+  snprintf(db_file_path, BUFLEN - 1, "%s/block_stores", folder_state);
+  recursive_mkdir(db_file_path, S_IRWXU);
+  snprintf(db_file_path, BUFLEN - 1, "%s/block_stores/%s", folder_state, bstore_file_name);
+  HashBlockStore* bs = new DBBlockStore(db_file_path);
+  MerkleRAM* ram = new RAMImpl(bs);
+  setBlockStoreAndRAM(bs, ram);
+
+  tree_t KEY_index;
+  tree_t Average_index;
+  tree_t Class_index;
+  tree_t Age_index;
+
+#ifndef READONLY
+  KEY_index.root = handle.KEY_index;
+  cout << "testing key index" << endl;
+  //test_tree(&KEY_index, number_of_rows);
+#else
+  Average_index.root = handle.Average_index;
+  Class_index.root = handle.Class_index;
+  Age_index.root = handle.Age_index;
+  {
+    cout << "testing average index" << endl;
+    Student_t tempStudent;
+    tree_result_set_t tempResult;
+    tree_find_gt(&(Average_index), (90), TRUE, &(tempResult));
+    for (int i = 0; i < tempResult.num_results; i++) {
+      hashget(&(tempStudent), &(tempResult.results[i].value));
+    }
+    //test_tree(&Average_index, number_of_rows);
+  }
+  {
+    cout << "testing class index" << endl;
+    Student_t tempStudent;
+    tree_result_set_t tempResult;
+    tree_find_eq(&(Class_index), (2009), &(tempResult));
+    for (int i = 0; i < tempResult.num_results; i++) {
+      hashget(&(tempStudent), &(tempResult.results[i].value));
+    }
+    //test_tree(&Class_index, number_of_rows);
+  }
+  {
+    cout << "testing age index" << endl;
+    Student_t tempStudent;
+    tree_result_set_t tempResult;
+    tree_find_range(&(Age_index), (20), (FALSE), (24), (FALSE), &(tempResult));
+    for (int i = 0; i < tempResult.num_results; i++) {
+      hashget(&(tempStudent), &(tempResult.results[i].value));
+    }
+    //test_tree(&Age_index, number_of_rows);
+  }
+#endif
+
+  deleteBlockStoreAndRAM();
+
+  cout << "all test passed" << endl;
+}
+
+Student_handle_t create_compressed_db(int number_of_rows, const char* bstore_file_name, const char* folder_state) {
+  return create_compressed_db(number_of_rows, 16, 4, bstore_file_name, folder_state);
+}
+
+Student_handle_t create_compressed_db(int number_of_rows, int number_of_chunks, int max_depth, const char* bstore_file_name, const char* folder_state) {
+  cout << "sizeof(tree_key_t) " << sizeof(tree_key_t) << endl;
+  cout << "sizeof(tree_value_t) " << sizeof(tree_value_t) << endl;
+  cout << "sizeof(uint32_t) " << sizeof(uint32_t) << endl;
+  cout << "sizeof(key_value_pair_t) " << sizeof(key_value_pair_t) << endl;
+
+  if (folder_state == NULL) {
+    folder_state = FOLDER_STATE;
+  }
+
+  setup(folder_state, bstore_file_name);
+
+  int entries_per_chunk = (number_of_rows + number_of_chunks - 1) / number_of_chunks;
+
+  // generate random permutation.
+  generate_random_permutation_as_keys(number_of_rows);
+
+  // generate the rows of the DB.
+  number_of_chunks = generate_db_rows(number_of_rows, number_of_chunks, entries_per_chunk, folder_state);
+
+  // sort the index
+  sort_indices(number_of_rows, number_of_chunks, entries_per_chunk);
+
+  // create compressed index tree
+  Student_handle_t handle = build_compressed_index_trees(number_of_rows, max_depth, folder_state, bstore_file_name);
+
+  clean_up();
+
+  test_compressed_trees(handle, number_of_rows, folder_state, bstore_file_name);
+
   return handle;
 }

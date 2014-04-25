@@ -71,4 +71,23 @@ public class VarLvalue extends Lvalue {
   public String toString() {
     return variable.getName();
   }
+
+  public boolean hasAddress() {
+  	return variable.hasAddress();
+  }
+  
+	@Override
+  public int getAddress() {
+	  return variable.getAddress();
+  }
+
+	@Override
+  public void allocateStackAddress() {
+	  variable.allocateStackAddress();
+  }
+
+	@Override
+  public void allocateHeapAddress() {
+		variable.allocateHeapAddress();
+  }
 }

@@ -55,8 +55,16 @@ class ComputationProver : public Prover {
     void compute_db_put_bits(FILE* pws_file);
     void compute_db_get_sibling_hash(FILE* pws_file);
 
+    void compute_exo_compute(FILE *pws_file);
+    void compute_exo_compute_getLL(std::vector< std::vector<std::string> > &inLL, FILE *pws_file, char *buf);
+    void compute_exo_compute_getL (std::vector<std::string> &inL, FILE *pws_file, char *buf);
+
+    void compute_fast_ramget(FILE* pws_file);
+    void compute_fast_ramput(FILE* pws_file);
+
     void parse_hash(FILE* pws_file, HashBlockStore::Key& outKey, int numHashBits);
     void compute_matrix_vec_mul(FILE* pws_file);
+    void compute_benes_network(FILE* pws_file);
     void compute_get_block_by_hash(FILE* pws_file);
     void compute_put_block_by_hash(FILE* pws_file);
     void compute_free_block_by_hash(FILE* pws_file);

@@ -66,6 +66,7 @@ class Prover {
     int num_lin_pcp_queries;
     int num_vars, num_cons;
     int num_local_runs;
+    int num_interpret_runs;
 
     mpz_t *f_answers;
     vector < mpz_t * > F_ptrs;

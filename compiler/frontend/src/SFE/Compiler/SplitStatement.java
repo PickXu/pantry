@@ -101,6 +101,7 @@ public class SplitStatement extends StatementWithOutputLine implements OutputWri
       throw new RuntimeException("Cannot split expression: "+toSplit);
     }
   }
+  
   public void toCircuit(Object obj, PrintWriter circuit) {
     circuit.print(getOutputLine()+" split ");
     for(AssignmentStatement q : this.subStatements){

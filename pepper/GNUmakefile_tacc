@@ -55,12 +55,15 @@ endif
 CFLAGS += -DDB_NUM_ADDRESSES=$(DB_NUM_ADDRESSES) -DDB_HASH_NUM_BITS=$(DB_HASH_NUM_BITS)
 CFLAGS += -DRAM_CELL_NUM_BITS=$(RAM_CELL_NUM_BITS)
 
+CFLAGS += -DFAST_RAM_WORD_WIDTH=$(FAST_RAM_WORD_WIDTH)
+CFLAGS += -DFAST_RAM_ADDRESS_WIDTH=$(FAST_RAM_ADDRESS_WIDTH)
+
 CFLAGS += -DMIE_ATE_USE_GMP
 
 # Add -fno-stack-protector if the option exists.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 CFLAGS += -DON_TACC
-CFLAGS += -DSCRATCH_FOLDER=\"$(SCRATCH_FOLDER)\"
+CFLAGS += -DSCRATCH_FOLDER=\"$(SCRATCH_FOLDER)/$(FOLDER_PREFIX)\"
 
 CUDA_CFLAGS := --use_fast_math -DMP_USE_64BIT=1 -gencode arch=compute_20,code=sm_20 -DON_TACC
 CUDA_IFLAGS := -I/usr/local/cuda/include -I/home/$(USER)/NVIDIA_GPU_Computing_SDK/C/common/inc -I/home/$(USER)/openssl/include

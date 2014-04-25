@@ -20,6 +20,11 @@ VARIABLES_TAG = "VARIABLES"
 END_TAG = "END_"
 START_TAG = "START_"
 
+# operation code for LOAD and STORE for fast RAM
+LOAD_OP = 0
+STORE_OP = 1
+NO_OP = 2
+
 m = 0  # input size
 chi = 0 # number of constraints
 NzA = 0 # Number of nonzero elements in the A matrices
@@ -52,6 +57,13 @@ num_substs = 0
 
 const_vars = {}
 
+num_elements_in_mem_op_tuple = 4
+
+mem_ops_input = []
+mem_timestamp = 0
+word_width = 64
+address_width = 32
+
 
 def process_spec_section(spec_file, start_tag, end_tag, func):
   in_section = False
@@ -77,12 +89,13 @@ def insert_db_hash_inputs(spec_file):
   global has_state, uses_ram
 
   for line in spec_file:
-    match = re.search('RAMGET|RAMPUT|HASHGET|HASHPUT|HASHFREE|GENERICGET|GENERICPUT|GENERICFREE', line)
+    match = re.search('^RAMGET|^RAMPUT|^HASHGET|^HASHPUT|^HASHFREE|^GENERICGET|^GENERICPUT|^GENERICFREE', line)
     if match:
       has_state = True
-      if match.group() == "RAMGET" or match.group() == "RAMPUT":
-        uses_ram = True
-        break
+      if not re.search('^RAMGET_FAST|^RAMPUT_FAST', line):
+        if match.group() == "RAMGET" or match.group() == "RAMPUT":
+          uses_ram = True
+          break
 
   spec_file.seek(0)
 
@@ -104,22 +117,22 @@ def expand_db_ops_in_spec(spec_file):
   def f(line):
     terms = line.split()
 
-    if line.startswith("RAMGET"):
+    if line.startswith("RAMGET "):
       expand_ramget(new_spec_file, terms[2], int(terms[4]), terms[6:])
-    elif line.startswith("RAMPUT"):
+    elif line.startswith("RAMPUT "):
       expand_ramput(new_spec_file, terms[2], int(terms[4]), terms[6:])
-    elif line.startswith("HASHGET") or line.startswith("HASHPUT"):
+    elif line.startswith("HASHGET ") or line.startswith("HASHPUT"):
       hash_vars_start = 4
       hash_vars_end = hash_vars_start + int(terms[2])
       hash_bit_vars = terms[hash_vars_start : hash_vars_end]
       terms = terms[hash_vars_end:]
       num_val_bits = int(terms[1])
 
-      if line.startswith("HASHGET"):
+      if line.startswith("HASHGET "):
         expand_hashget(new_spec_file, hash_bit_vars, num_val_bits, terms[3:])
       else:
         expand_hashput(new_spec_file, hash_bit_vars, num_val_bits, terms[3:])
-    elif line.startswith("HASHFREE"):
+    elif line.startswith("HASHFREE "):
       hash_vars_start = 4
       hash_vars_end = hash_vars_start + int(terms[2])
       hash_bit_vars = terms[hash_vars_start : hash_vars_end]
@@ -134,6 +147,75 @@ def expand_db_ops_in_spec(spec_file):
   new_spec_file.seek(0)
   return new_spec_file
 
+def generate_memory_consistency_in_spec(spec_file):
+  # the front-end doesn't generate MEMORY_CONSISTENCY in spec file. The
+  # back-end goes through all memory operations and append this to the end
+  # of the spec file.
+
+  new_spec_file = open(spec_file.name + ".mem_consistency", "w+")
+  new_spec_file.write(START_TAG + CONSTRAINTS_TAG + "\n")
+
+  def f(line):
+    line = line.strip()
+    if line.startswith("RAMPUT_FAST") or line.startswith("RAMGET_FAST"):
+      terms = line.split()
+      op = terms[0]
+      addr = terms[2]
+      value = terms[4]
+      if line.startswith("RAMPUT_FAST"):
+        condition = terms[6]
+        branch = terms[7]
+        value = terms[8]
+      else:
+        condition = 1
+        branch = "true"
+      if op == "RAMPUT_FAST":
+        type = STORE_OP
+      else:
+        type = LOAD_OP
+
+      # assign type and timestamp to variables for this memory operation
+      global mem_ops_input
+      global mem_timestamp
+
+      mem_ops_input += [str(addr), str(mem_timestamp), str(type), str(value), str(condition), str(branch)]
+      mem_timestamp += 1
+    new_spec_file.write(line + "\n")
+
+  process_spec_section(spec_file, START_TAG + CONSTRAINTS_TAG, END_TAG + CONSTRAINTS_TAG, f)
+  spec_file.close()
+
+  # append one line for MEMORY_CONSISTENCY if there are any memory operations to the spec file.
+  global mem_ops_input
+
+  if len(mem_ops_input) > 0:
+    # compute width
+    width = len(mem_ops_input) / (num_elements_in_mem_op_tuple + 2)
+    # pad width to be power of 2.
+    rounded_width = math.pow(2, math.ceil(math.log(width, 2)));
+    if rounded_width < 2:
+      rounded_width = 2
+
+    #print "width: ", width
+    #print "rounded width: ", rounded_width
+
+    global mem_timestamp
+    while width < rounded_width:
+      # pad with store 0 at addr 0. This should have no effect on actual memory operations.
+      # TODO confirm this.
+      mem_ops_input += ["0", str(mem_timestamp), str(NO_OP), "0", "1", "true"]
+      width += 1
+      mem_timestamp += 1
+
+    #print "width: ", width
+
+    depth = 2 * int(math.log(width, 2)) - 1
+    memory_consistency = "MEM_CONSISTENCY WORD_WIDTH %d WIDTH %d DEPTH %d INPUT %s\n" % (address_width, width, depth, " ".join(mem_ops_input))
+    new_spec_file.write(memory_consistency)
+
+  new_spec_file.write(END_TAG + CONSTRAINTS_TAG + "\n")
+  new_spec_file.seek(0)
+  return new_spec_file
 
 # Alas, for now we have to replace constants with variables. That's the cost of using pre-built
 # constraint templates rather than compiler-optimized constraints.
@@ -348,9 +430,9 @@ def parse_spec_file(spec_file):
 
   spec_file.seek(0)
 
-#  	print "INPUT_VARS:", input_vars
-#  	print "OUTPUT_VARS:", output_vars
-#  	print "VARIABLES:", variables
+#  print "INPUT_VARS:", input_vars
+#  print "OUTPUT_VARS:", output_vars
+#  print "VARIABLES:", variables
 
 def get_bits_signed_difference(arg0, var0, arg1, var1):
   adjusted_na1 = var0["na"]
@@ -539,6 +621,7 @@ def division_as_basic_constraints(arg0, op, arg1, target):
   if (a_var["nb"] != 0 or b_var["nb"] != 0):
     raise Exception("Constraints for rational division not yet implemented")
 
+  bnon0 = pn("Bnon0")
   q = pn_type("Q",a)
   r = pn_type("R",b)
   rless0 = pn("Rless0")
@@ -549,9 +632,11 @@ def division_as_basic_constraints(arg0, op, arg1, target):
   absr = pn_type("Absr",r)
   absb = pn_type("Absb",b)
   absrlessabsb = pn("Absrlessabsb")
+  atbnon0 = pn("ATBnon0")
 
   computation = []
   computation += to_basic_constraints_lines("".join([
+      "%s != 0 - %s\n" % (b, bnon0),
       "%s < 0 - %s\n" % (r, rless0),
       "%s != 0 - %s\n" % (r, rnon0),
       "%s < 0 - %s\n" % (b, bless0),
@@ -562,9 +647,10 @@ def division_as_basic_constraints(arg0, op, arg1, target):
       "( %s ) * ( -2 * %s ) + ( %s - %s )\n" %
           (bless0, b, b, absb),
       "%s < %s - %s\n" % (absr, absb, absrlessabsb),
+      "%( %s ) * ( %s ) + ( - %s )\n" % (bnon0, a, atbnon0),
       "( %s ) * ( %s ) + ( %s - %s )\n" %
-          (b, q, r, a),
-      "( ) * ( ) + ( 1 - %s )\n" % (absrlessabsb),
+           (b, q, r, atbnon0),
+       "( %s ) * ( 1 - %s ) + ( )\n" % (bnon0, absrlessabsb),
       "( %s ) * ( %s - %s ) + ( )\n" % (rnon0, rless0, aless0)
     ]))
 
@@ -654,12 +740,395 @@ def split_unsignedint_as_basic_constraints(terms):
 
   return toRet
 
+def generate_benes_network_variable_names(address_width, width, depth, input):
+  # allocate variables here.
+
+  # expand all intermediate nodes. <num_elements_in_mem_op_tuple * width * (depth - 1)> of them.
+  intermediate_nodes = []
+  for i in range(width):
+    for j in range(depth - 1):
+      intermediate_nodes.append("benes$r%s$c%s$addr" % (i, j))
+      intermediate_nodes.append("benes$r%s$c%s$ts" % (i, j))
+      intermediate_nodes.append("benes$r%s$c%s$type" % (i, j))
+      intermediate_nodes.append("benes$r%s$c%s$value" % (i, j))
+  #print intermediate_nodes
+
+  # expand output variables. <num_elements_in_mem_op_tuple * width> of them
+  output = []
+  for i in range(width):
+    #output.append("V%s" % (output_start + i))
+    output.append("benes$output$%s$addr" % (i))
+    output.append("benes$output$%s$ts" % (i))
+    output.append("benes$output$%s$type" % (i))
+    output.append("benes$output$%s$value" % (i))
+  #print output
+
+  # expand switch variables. <width * depth / 2> of them.
+  switches = []
+  for i in range(width / 2):
+    for j in range(depth):
+      switches.append("benes$switch$r%s$c%s" % (i, j))
+  #print switches
+
+  return (intermediate_nodes, output, switches)
+
+# Not sure if I can have something like ( 1 - 1 ) * 1 in basic constraints?
+# Answer: yes, I can!
+def benes_network_as_basic_constraints(address_width, width, depth, input):
+  #toRet = []
+
+  (intermediate_nodes, output, switches) = generate_benes_network_variable_names(address_width, width, depth, input)
+  # a list of all nodes.
+  nodes = input + intermediate_nodes + output
+  #print nodes
+
+  def gen_benes_network_basic_constraints(width, nodes):
+    # expand benes network constraints
+    # depth * width / 2 groups of constraints to be generated.
+
+    # for each group, there are 8 constraints.
+    switch_index = 0
+
+    log_width = int(math.log(width, 2))
+
+    # the first half of the butterfly network
+    for i in range(log_width):
+      gap_size = width >> (i + 1)
+      group_size = width >> i
+      switches_in_a_group = group_size / 2
+
+      for j in range(width):
+        group_id = j >> (log_width - i)
+        in_group_offset = j & (switches_in_a_group - 1)
+
+        target_index = (i + 1) * width + j
+        source_index1 = target_index - width
+        source_index2 = source_index1 ^ gap_size
+        switch_index = i * width / 2 + group_id * switches_in_a_group + in_group_offset
+
+        #print gap_size, group_size, group_id, in_group_offset, target_index, source_index1, source_index2, switch_index
+        for k in range(num_elements_in_mem_op_tuple):
+          constraint = "( %s - %s ) * ( %s ) + ( %s - %s )" % (
+              nodes[num_elements_in_mem_op_tuple * source_index2 + k],
+              nodes[num_elements_in_mem_op_tuple * source_index1 + k],
+              switches[switch_index],
+              nodes[num_elements_in_mem_op_tuple * source_index1 + k],
+              nodes[num_elements_in_mem_op_tuple * target_index + k])
+          #print constraint
+          yield constraint
+          #toRet.append(constraint)
+
+    # the second half of the butterfly network
+    for i in reversed(range(log_width - 1)):
+      gap_size = width >> (i + 1)
+      group_size = width >> i
+      switches_in_a_group = group_size / 2
+
+      for j in range(width):
+        group_id = j >> (log_width - i)
+        in_group_offset = j & (switches_in_a_group - 1)
+
+        target_index = (2 * log_width - i - 1) * width + j
+        source_index1 = target_index - width
+        source_index2 = source_index1 ^ gap_size
+        switch_index = (2 * log_width - i - 2) * width / 2 + group_id * switches_in_a_group + in_group_offset
+
+        #print gap_size, group_size, group_id, in_group_offset, target_index, source_index1, source_index2, switch_index
+        for k in range(num_elements_in_mem_op_tuple):
+          constraint = "( %s - %s ) * ( %s ) + ( %s - %s )" % (
+              nodes[num_elements_in_mem_op_tuple * source_index2 + k],
+              nodes[num_elements_in_mem_op_tuple * source_index1 + k],
+              switches[switch_index],
+              nodes[num_elements_in_mem_op_tuple * source_index1 + k],
+              nodes[num_elements_in_mem_op_tuple * target_index + k])
+          #print constraint
+          yield constraint
+          #toRet.append(constraint)
+
+  return (output, gen_benes_network_basic_constraints(width, nodes))
+
+def generate_computation_first_mem_consistency(mem_op):
+  def pv(name):
+    return variables.read_var(name)
+
+  op2 = dict()
+
+  op2["addr"] = mem_op[0]
+  op2["ts"] = mem_op[1]
+  op2["type"] = mem_op[2]
+  op2["value"] = mem_op[3]
+
+  name_prefix = op2["addr"][:op2["addr"].rfind("$")]
+
+  V12 = "%s$V12" % name_prefix
+  pv(V12)
+  V13 = "%s$V13" % name_prefix
+  pv(V13)
+  V26 = "%s$V26" % name_prefix
+  pv(V26)
+  V23 = "%s$V23" % name_prefix
+  pv(V23)
+
+  # TODO this can be optimized.
+  computation = "\n".join(
+      ["%s != %s - %s" % (op2["type"], LOAD_OP, V12),
+      "%s != %s - %s" % (op2["value"], 0, V13),
+      "( - %s + 1 ) * ( - %s ) + ( 1 - %s )" % (V12, V13, V26),
+      "(  ) * (  ) + ( %s + -1 - %s )" % (V26, V23),
+      "ASSERT_ZERO %s" % (V23)])
+
+  return computation
+
+def generate_computation_pairwise_mem_consistency(mem_op):
+  def pv(name):
+    return variables.read_var(name)
+  # <width> groups of constraints will be generated each establish a pairwise
+  # consistency constraint for the memory operation.
+
+  # The four elements in the tuple are (addr, timestamp, type, value)
+  # the following constraints need to be established.
+  # for each consecutive output tuple
+  # (addr(i), timestamp(i), type(i), value(i)) and (addr(i+1), timestamp(i+1), type(i+1), value(i+1))
+  # 1. (addr(i) < addr(i+1)) || ((addr(i) == addr(i+1)) && timestamp(i) < timestamp(i+1))
+  # 2. if (type(i+1)==LOAD) {
+  #      if (addr(i+1) == addr(i)) {
+  #        assert(value(i+1) == 0)
+  #      } else {
+  #        assert(value(i+1) == value(i)
+  #      }
+  #    }
+  # 1 can be expressed as a bunch of comparison and assert_zero constraints.
+  # 2 can be expressed as a bunch of equality test and assert zero constraints.
+  #
+  op1 = dict()
+  op2 = dict()
+
+  op1["addr"] = mem_op[0]
+  op1["ts"] = mem_op[1]
+  op1["type"] = mem_op[2]
+  op1["value"] = mem_op[3]
+  op2["addr"] = mem_op[4]
+  op2["ts"] = mem_op[5]
+  op2["type"] = mem_op[6]
+  op2["value"] = mem_op[7]
+
+  name_prefix = op2["addr"][:op2["addr"].rfind("$")]
+
+  V13 = "%s$V13" % name_prefix
+  pv(V13)
+  V14 = "%s$V14" % name_prefix
+  pv(V14)
+  V15 = "%s$V15" % name_prefix
+  pv(V15)
+  V23 = "%s$V23" % name_prefix
+  pv(V23)
+  V25 = "%s$V25" % name_prefix
+  pv(V25)
+  V27 = "%s$V27" % name_prefix
+  pv(V27)
+  V28 = "%s$V28" % name_prefix
+  pv(V28)
+  V29 = "%s$V29" % name_prefix
+  pv(V29)
+  V39 = "%s$V39" % name_prefix
+  pv(V39)
+  V41 = "%s$V41" % name_prefix
+  pv(V41)
+  V43 = "%s$V43" % name_prefix
+  pv(V43)
+  V51 = "%s$V51" % name_prefix
+  pv(V51)
+  V48 = "%s$V48" % name_prefix
+  pv(V48)
+
+  # TODO this can be optimized.
+  computation = "\n".join(
+      ["%s < %s - %s" % (op1["addr"], op2["addr"], V13),
+      "%s != %s - %s" % (op2["type"], LOAD_OP, V14),
+      "%s != %s - %s" % (op2["value"], 0, V15),
+      "%s != %s - %s" % (op1["addr"], op2["addr"], V23),
+      "%s < %s - %s" % (op1["ts"], op2["ts"], V25),
+      "( %s ) * ( - %s + 1 ) + (  - %s )" % (V25, V23, V27),
+      "%s != %s - %s" % (op2["type"], LOAD_OP, V28),
+      "%s != %s - %s" % (op1["value"], op2["value"], V29),
+      "( - %s + 1 ) * ( - %s ) + ( 1 - %s )" % (V28, V29, V39),
+      "( %s ) * ( %s ) + (  - %s )" % (V27, V39, V41),
+      "( - %s + 1 ) * ( - %s ) + ( - %s + 1 - %s )" % (V14, V15, V41, V43),
+      "( %s ) * ( %s ) + ( %s - %s )" % (V13, V43, V41, V51),
+      "(  ) * (  ) + ( %s + -1 - %s )" % (V51, V48),
+      "ASSERT_ZERO %s" % (V48)])
+
+  return computation
+
+def parse_exo_compute_spec_line(terms):
+  cTok = 0
+
+  assert terms[cTok] == "EXO_COMPUTE"
+  cTok += 1
+
+  assert terms[cTok] == "EXOID"
+  cTok += 1
+
+  exoId = int(terms[cTok])
+  cTok += 1
+
+  assert terms[cTok] == "INPUTS"
+  cTok += 1
+
+  assert terms[cTok] == "["
+  cTok += 1
+
+  inVars = []
+
+  while True:
+    (cTok,outArr) = parse_exo_compute_array(terms,cTok)
+    inVars.append(outArr)
+
+    if terms[cTok] == "]":
+        cTok += 1
+        break
+
+  assert terms[cTok] == "OUTPUTS"
+  cTok += 1
+
+  (cTok,outVars) = parse_exo_compute_array(terms,cTok)
+
+  return (inVars,outVars,exoId)
+
+# parse a single array, like [ a b c d ]
+def parse_exo_compute_array(terms,cTok):
+  theArr = []
+
+  assert terms[cTok] == "["
+  cTok += 1
+
+  while True:
+    if terms[cTok] == "]":
+      cTok += 1
+      break
+    else:
+      theArr.append(terms[cTok])
+      cTok += 1
+
+  return (cTok,theArr)
+
+def parse_mem_consistency_spec_line(terms):
+  current_token = 0
+  assert terms[current_token] == "MEM_CONSISTENCY"
+  current_token = current_token + 1
+
+  assert terms[current_token] == "WORD_WIDTH"
+  current_token = current_token + 1
+
+  address_width = int(terms[current_token])
+  current_token = current_token + 1
+
+  assert terms[current_token] == "WIDTH"
+  current_token = current_token + 1
+
+  width = int(terms[current_token])
+  current_token = current_token + 1
+
+  assert terms[current_token] == "DEPTH"
+  current_token = current_token + 1
+
+  depth = int(terms[current_token])
+  current_token = current_token + 1
+
+  assert terms[current_token] == "INPUT"
+  current_token = current_token + 1
+
+  input = list(terms)[current_token:(current_token + (num_elements_in_mem_op_tuple + 2) * width)] # <num_elements_in_mem_op_tuple * width> of them
+
+  return (address_width, width, depth, input)
+
+def generate_computation_benes_network_actual_input(address_width, width, depth, input):
+  def pv(name):
+    return variables.read_var(name)
+
+  num_elements_in_input_tuple = num_elements_in_mem_op_tuple + 2
+  actual_input = []
+  computations = ""
+
+  for i in range(width):
+    addr = input[i * num_elements_in_input_tuple + 0]
+    timestamp = input[i * num_elements_in_input_tuple + 1]
+    type = input[i * num_elements_in_input_tuple + 2]
+    value = input[i * num_elements_in_input_tuple + 3]
+    condition = input[i * num_elements_in_input_tuple + 4]
+    branch = input[i * num_elements_in_input_tuple + 5]
+
+    # if it's load operation or it's a store operations that's definitely going
+    # to be executed, the actual input will be the original variables/constant
+    # used in RAMPUT_FAST and RAMGET_FAST.
+    if type == str(LOAD_OP):
+      actual_input += [addr, timestamp, type, value]
+    elif ((condition == "1" or condition == 1 ) and branch == "true"):
+      actual_input += [addr, timestamp, type, value]
+    elif ((condition == "0" or condition == 0 ) and branch == "false"):
+      actual_input += [addr, timestamp, type, value]
+    else:
+      #otherwise, the op code will be either no_op or store.
+      actual_type = "benes$input$%s$.type" % timestamp
+
+      pv(actual_type)
+
+      global mem_timestamp
+
+      if branch == "true":
+        computations += "( %s ) * ( %s - %s ) + ( %s - %s )\n" % (condition, type, NO_OP, NO_OP, actual_type)
+      else:
+        computations += "( 1 - %s ) * ( %s - %s ) + ( %s - %s )\n" % (condition, type, NO_OP, NO_OP, actual_type)
+
+      actual_input += [addr, timestamp, actual_type, value]
+
+  return (computations, actual_input)
+
+#
+# EXAMPLE:
+# MEM_CONSISTENCY WORD_WIDTH 16 WIDTH 4 DEPTH 3 INPUT V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 INTERMEDIATE 16 OUTPUT V48 SWITCH V64
+#
+# Once this is implemented, QAP file can be correctly generated.
+def mem_consistency_as_basic_constraints(terms):
+  # separate terms to be input/intermediate nodes/output and switch flags.
+
+  (address_width, width, depth, input) = parse_mem_consistency_spec_line(terms)
+
+  # convert this to use generator to save memory
+  (computation, input) = generate_computation_benes_network_actual_input(address_width, width, depth, input)
+  for bc in to_basic_constraints_lines(computation):
+    yield bc
+
+  #print "input: ", input
+  #print "actual_input: ", toRet
+
+  (output, constraints) = benes_network_as_basic_constraints(address_width, width, depth, input)
+  #print "benes_network: ", cons
+  for bc in constraints:
+    yield bc
+
+  # expand memory consistency constraints
+
+  # first memory access need some extra care
+  # take care of the first memory access
+  computation = generate_computation_first_mem_consistency(output[:num_elements_in_mem_op_tuple])
+  for bc in to_basic_constraints_lines(computation):
+    yield bc
+
+  for i in range(width - 1):
+    computation = generate_computation_pairwise_mem_consistency(output[num_elements_in_mem_op_tuple * i:num_elements_in_mem_op_tuple * (i + 2)])
+    for bc in to_basic_constraints_lines(computation):
+      yield bc
 
 def is_exogenous_cons(line):
   # These commands take exogenous values, and so they don't belong in a QAP
   ops = ["DB_GET_SIBLING_HASH", "DB_GET_BITS", "DB_PUT_BITS", \
          "GET_BLOCK_BY_HASH", "PUT_BLOCK_BY_HASH", "FREE_BLOCK_BY_HASH" \
-         "GENERICPUT", "GENERICFREE", "PRINTF", "MATRIX_VEC_MUL"]
+         "GENERICPUT", "GENERICFREE", "PRINTF",
+         # include RAMPUT_FAST and RAMGET_FAST
+         "RAMPUT_FAST", "RAMGET_FAST",
+         # include EXO_COMPUTE
+         "EXO_COMPUTE"]
   for op in ops:
     if line.startswith(op):
       return True
@@ -673,6 +1142,8 @@ def to_basic_constraints_lines(text):
   for line in lines:
     line = line.strip()
     toRet += to_basic_constraints(line)
+    #for bs in toRet:
+      #yield bs
 
   return toRet
 
@@ -680,7 +1151,7 @@ def to_basic_constraints_lines(text):
 def to_basic_constraints(line):
   #shortcircuiting
   if (line.startswith("}") or line.startswith("shortcircuit")):
-    return []
+    yield []
 
   toRet = []
   if is_exogenous_cons(line) or line == "":
@@ -720,15 +1191,20 @@ def to_basic_constraints(line):
     for valbit in val_bits:
       toRet += ["( %s ) * ( %s - 1 ) + ( )" %
         (valbit, valbit)]
+  elif line.startswith("MEM_CONSISTENCY"):
+    # expand MEM_CONSISTENCY spec line to basic constraints
+    # for Benes network and memory consistency.
+    terms = line.split()
+    toRet = mem_consistency_as_basic_constraints(terms)
   else:
     toRet = [line]
 
   toRet_expanded = []
   for bc in toRet:
-    toRet_expanded += [expand_basic_constraint(bc)]
-  toRet = toRet_expanded
-
-  return toRet
+    #toRet_expanded += [expand_basic_constraint(bc)]
+    yield expand_basic_constraint(bc)
+  #toRet = toRet_expanded
+  #yield toRet
 
 def expand_basic_constraint(bc):
   tokens = collections.deque(bc.split())
@@ -1136,13 +1612,16 @@ def generate_zaatar_matrices(spec_file, shuffled_indices, qap_file_name):
       NzB += cons_entry.Bij
       NzC += cons_entry.Cij
     else:
+      # variable names are directly used in to_basic_constraints.
+      # numbering are performed in expand_polynomial_matrixrow.
       basic_constraints = to_basic_constraints(line)
-      if line.startswith("SI") or line.startswith("SIL"):
-        split_ops += len(basic_constraints)
-      else:
-        num_normal_constraints += len(basic_constraints)
 
       for bc in basic_constraints:
+        if line.startswith("SI") or line.startswith("SIL"):
+          split_ops += 1
+        else:
+          num_normal_constraints += 1
+
         tokens = collections.deque(bc.split())
         (nasub, A2) = expand_polynomial_matrixrow(tokens)
         A3 = convert_to_compressed_polynomial(j, A2, shuffled_indices)
@@ -1469,12 +1948,11 @@ def generate_computation_not_equals(arg0, arg1, target):
     # Make an intermediate for the output in this case
     Mvar2 = pv("M2")
     return "".join(["!= M %s X1 %s X2 %s Y %s\n" % (Mvar, f(arg0), f(arg1), Mvar2),
-		   "P %s = %s E\n" %(f(target), Mvar2)])
+                    "P %s = %s E\n" %(f(target), Mvar2)])
   else:
-    return "!= M %s X1 %s X2 %s Y %s\n" % (Mvar,
-	f(arg0), f(arg1), f(target))
+    return "!= M %s X1 %s X2 %s Y %s\n" % (Mvar, f(arg0), f(arg1), f(target))
 
-def generate_computation_divide(arg0, op, arg1, target):
+def generate_computation_divide(arg0, op, arg1, target, pws_file):
   def pn(name):
     var = prover_var(target, name)
     return var["name"]
@@ -1500,6 +1978,7 @@ def generate_computation_divide(arg0, op, arg1, target):
   if (a_var["nb"] != 0 or b_var["nb"] != 0):
     raise Exception("Constraints for rational division not yet implemented")
 
+  bnon0 = pn("Bnon0")
   q = pn_type("Q",a)
   r = pn_type("R",b)
   rless0 = pn("Rless0")
@@ -1510,12 +1989,14 @@ def generate_computation_divide(arg0, op, arg1, target):
   absr = pn_type("Absr",r)
   absb = pn_type("Absb",b)
   absrlessabsb = pn("Absrlessabsb")
+  atbnon0 = pn("ATBnon0")
 
-  computation = ""
-  computation += "/I %s = %s /I %s\n" % (f(q), f(a), f(b))
-  computation += "%%I %s = %s %%I %s\n" % (f(r), f(a), f(b))
+  
+  pws_file.write("/I %s = %s /I %s\n" % (f(q), f(a), f(b)))
+  pws_file.write("%%I %s = %s %%I %s\n" % (f(r), f(a), f(b)))
 
-  computation += generate_computation_lines("".join([
+  generate_computation_lines("".join([
+      "%s != 0 - %s\n" % (b, bnon0),
       "%s < 0 - %s\n" % (r, rless0),
       "%s != 0 - %s\n" % (r, rnon0),
       "%s < 0 - %s\n" % (b, bless0),
@@ -1525,19 +2006,20 @@ def generate_computation_divide(arg0, op, arg1, target):
           (rless0, r, r, absr),
       "( %s ) * ( -2 * %s ) + ( %s - %s )\n" %
           (bless0, b, b, absb),
-      "%s < %s - %s\n" % (absr, absb, absrlessabsb)
-    ]))
+      "%s < %s - %s\n" % (absr, absb, absrlessabsb),
+      "( %s ) * ( %s ) + ( - %s )\n" % (bnon0, a, atbnon0)
+    ]), pws_file)
 
   if (op == "/"):
-    computation += generate_computation_line("( ) * ( ) + ( %s - %s )\n"
-      % (q, target))
+    generate_computation_line("( ) * ( ) + ( %s - %s )\n"
+      % (q, target), pws_file)
   elif (op == "%"):
-    computation += generate_computation_line("( ) * ( ) + ( %s - %s )\n"
-      % (r, target))
+    generate_computation_line("( ) * ( ) + ( %s - %s )\n"
+      % (r, target), pws_file)
   else:
     raise Exception("Assertion error - bad division op %s" % (op))
 
-  return computation 
+  #return computation 
 
 # Honest prover's implementation of less than
 def generate_computation_less(arg0, arg1, target):
@@ -1599,6 +2081,119 @@ def generate_computation_less_f(na2, nb2, arg0, arg1, target):
       DenVar, NDVar, MltVar, MeqVar, MgtVar,
       f(arg0), f(arg1), f(target))
 
+def generate_computation_benes_network(address_width, width, depth, input):
+  def pv(name):
+    return variables.read_var(name)
+
+  def pv_type(name, templatename):
+    var = variables.read_var(name)
+    (templatevar, _) = to_var(templatename)
+    var["type"] = templatename["type"]
+    var["na"] = templatevar["na"]
+    var["nb"] = templatevar["nb"]
+    return var
+
+  def f(varname):
+    (_, renumbered_name) = to_var(varname)
+    return renumbered_name
+
+  (intermediate_nodes, output, switches) = generate_benes_network_variable_names(address_width, width, depth, input)
+
+  addr = input[0]
+  ts = input[1]
+  type = input[2]
+  value = input[3]
+
+  # addr should be of equal or less length of address_width
+  #assert (address_width >= to_var(addr)[0]["na"])
+  # value should be of equal or less length of word_width
+  #assert (word_width >= to_var(value)[0]["na"])
+  # type should be either 0 (store) or 1 (load)
+  #assert (1 == to_var(type)[0]["na"])
+
+  # register intermediate variables
+  for node in intermediate_nodes:
+    # mess with intermediate variable types
+    #pv_type(node, input[i % num_elements_in_mem_op_tuple])
+    pv(node)
+
+  i = 0;
+  # 0=>address 1=>timestamp 2=>op 3=>value
+  # address, timestamp, type, value
+  na_size = [address_width, 32, 2, word_width]
+  for node in output:
+    # mess with intermediate variable types
+    var = pv(node)
+    var["type"] = "uint"
+    var["na"] = na_size[i % 4]
+    var["nb"] = 0
+    i = i + 1
+
+  # all switches are 1 bit
+  for node in switches:
+    var = pv(node)
+    #var["type"] = "uint"
+    #var["na"] = 1
+    #var["nb"] = 0
+
+  line = "BENES_NETWORK WIDTH %s DEPTH %s INPUT" % (width, depth)
+
+  for node in input:
+    line += " %s" % (f(node))
+
+  # all variable names should be used here.
+  if (len(intermediate_nodes) > 0):
+    line += " INTERMEDIATE %s OUTPUT %s SWITCH %s" % (f(intermediate_nodes[0]), f(output[0]), f(switches[0]))
+  else:
+    line += " INTERMEDIATE NULL OUTPUT %s SWITCH %s" % (f(output[0]), f(switches[0]))
+  line += "\n"
+
+  return (line, output)
+
+def generate_computation_exo_compute(terms, pws_file):
+  (inVars, outVars, exoId) = parse_exo_compute_spec_line(terms)
+
+  def snd(tup):
+    return tup[1]
+
+  newLine = []
+
+  newLine.append("EXO_COMPUTE EXOID %d INPUTS [" % exoId)
+
+  for i in inVars:
+    newLine.append("[")
+    newLine += map(snd,map(to_var,i))
+    newLine.append("]")
+
+  newLine.append("] OUTPUTS [")
+  newLine += map(snd,map(to_var,outVars));
+  newLine.append("]")
+
+  pws_file.write(" ".join(newLine) + "\n")
+
+def generate_computation_mem_consistency(terms, pws_file):
+  (address_width, width, depth, input) = parse_mem_consistency_spec_line(terms)
+  # expand constraints to compute the actual input to the benes network.
+  # replace RAM operations on non-executed with "no-op".
+
+  computation, input = generate_computation_benes_network_actual_input(address_width, width, depth, input)
+  generate_computation_lines(computation, pws_file)
+
+  #print input
+
+  # expand the spec line to Benes network pseudo constraint and memory
+  # consistency constraints
+  computation, output = generate_computation_benes_network(address_width, width, depth, input)
+  pws_file.write(computation)
+
+  computation = generate_computation_first_mem_consistency(output[:num_elements_in_mem_op_tuple])
+  generate_computation_lines(computation, pws_file)
+
+  for i in range(width - 1):
+    # all variables used here are names
+    computation = generate_computation_pairwise_mem_consistency(output[num_elements_in_mem_op_tuple * i:num_elements_in_mem_op_tuple * (i + 2)])
+    generate_computation_lines(computation, pws_file)
+
 def renumber_vars(terms):
   def f(varname):
     (_, renumbered_name) = to_var(varname)
@@ -1652,29 +2247,39 @@ def read_poly(tokens):
   return toRet
 
 def only_renumber(term):
+  # update this with fast ram operations.
   ops = ["SIL", "SI", "DB_GET_SIBLING_HASH", "DB_GET_BITS", "DB_PUT_BITS", \
          "GET_BLOCK_BY_HASH", "PUT_BLOCK_BY_HASH", "FREE_BLOCK_BY_HASH", \
          "GENERICGET", "GENERICPUT", "GENERICFREE",
-         "ASSERT_ZERO", "PRINTF"]
+         "ASSERT_ZERO", "PRINTF",
+         "RAMPUT_FAST", "RAMGET_FAST",
+        ]
   return (term in ops)
 
-def generate_computation_line(line):
+# this function generates the line in pws file for the prover to know
+# how to solve each constraints.
+def generate_computation_line(line, pws_file):
   #determine what kind of computation is taking place
   terms = collections.deque(line.split())
   if only_renumber(terms[0]):
     toRet = renumber_vars(terms)
     #print(terms,"\n",toRet,"\n")
-    return toRet
+    #return toRet
+    pws_file.write(toRet)
   elif line.startswith("ASSERT_POLY_ZERO"):
-    return "" #Do nothing on asserts
+    return #Do nothing on asserts
   #elif line.startswith("ASSERT_ZERO") or line.startswith("ASSERT_POLY_ZERO"):
     #return "" #Do nothing on asserts
   elif "!=" in line: #Line has format Var != Var - Var
-    return generate_computation_not_equals(terms[0], terms[2], terms[4])
+    pws_file.write(generate_computation_not_equals(terms[0], terms[2], terms[4]))
   elif "<" in line: #Line has format Var < Var - Var
-    return generate_computation_less(terms[0], terms[2], terms[4])
+    pws_file.write(generate_computation_less(terms[0], terms[2], terms[4]))
   elif "%" in line or "/" in line: #Line has format Var %/ Var - Var
-    return generate_computation_divide(terms[0], terms[1], terms[2], terms[4])
+    generate_computation_divide(terms[0], terms[1], terms[2], terms[4], pws_file)
+  elif line.startswith("MEM_CONSISTENCY"):
+    generate_computation_mem_consistency(terms, pws_file)
+  elif line.startswith("EXO_COMPUTE"):
+    generate_computation_exo_compute(terms, pws_file)
   else:
     # Depends on whether we have zaatar or ginger constraints
     global framework
@@ -1684,7 +2289,7 @@ def generate_computation_line(line):
       worksheet += generate_computation_poly(target, terms)
       if (constant != "1"):
         worksheet += generate_computation_exact_divide(target, target, constant)
-      return worksheet
+      pws_file.write(worksheet)
     if (framework == "ZAATAR"):
       polyA = read_poly(terms)
       star = terms.popleft()
@@ -1711,7 +2316,7 @@ def generate_computation_line(line):
       worksheet += generate_computation_poly(target, poly)
       if (constant != "1"):
         worksheet += generate_computation_exact_divide(target, target, constant)
-      return worksheet
+      pws_file.write(worksheet)
 
 # For a polynomial constraint such as x1 * x2 - 4 * x3, returns ("4", x3)
 # For a polynomial constraint x1 * x2 - x3, returns ("1", x3)
@@ -1726,20 +2331,24 @@ def get_poly_output(tokens):
   tokens.pop() # -
   return (constant, target)
 
-def generate_computation_lines(text):
+def generate_computation_lines(text, pws_file):
   lines = text.splitlines()
  
-  worksheet = ""
+  #worksheet = ""
 
   for line in lines:
     line = line.strip()
     if line != "":
-      computationForLine = generate_computation_line(line)
-      worksheet += computationForLine 
+      #computationForLine = 
+      generate_computation_line(line, pws_file)
+      #worksheet += computationForLine 
  
-  return worksheet
+  #return worksheet
 
 def generate_computation_worksheet(spec_file, pws_loc):
+  global mem_timestamp
+  global mem_ops_input
+
   with open(pws_loc, "w") as pws_file:
     def f(line):
       line = line.strip()
@@ -1750,8 +2359,9 @@ def generate_computation_worksheet(spec_file, pws_loc):
         with open(cons_entry.tmpls["pws"], "r") as src_tmpl:  
           template_subst(pws_file, src_tmpl, subst_entry)
       elif line != "":
-        computationForLine = generate_computation_line(line)
-        pws_file.write(computationForLine)
+        # it's not a good idea for one line to be expanded into many lines.
+        generate_computation_line(line, pws_file)
+        #pws_file.write(computationForLine)
 
     process_spec_section(spec_file, START_TAG + CONSTRAINTS_TAG, END_TAG + CONSTRAINTS_TAG, f)
 
@@ -1798,7 +2408,7 @@ def generate_computation_static(spec_file):
 
 def generate_F1_index():
   shuffled_indices = range(0, variables.num_vars)
-  random.shuffle(shuffled_indices)
+  #random.shuffle(shuffled_indices)
 
   code = ""
   for i in range(0, variables.num_vars):

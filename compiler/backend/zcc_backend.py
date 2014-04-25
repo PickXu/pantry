@@ -89,6 +89,8 @@ class CodeGenerator():
       print ("Expanding database operations in " + spec_path)
     spec_file = zcc_parser.expand_db_ops_in_spec(spec_file)
 
+    spec_file = zcc_parser.generate_memory_consistency_in_spec(spec_file)
+
     return spec_file
 
   def generate_pws(self, spec_file, defs):
@@ -291,6 +293,8 @@ def main():
   parser.add_option("--db-hash-func", dest="dbHashFunc", default="ggh")
   parser.add_option("--db-num-addresses", dest="dbNumAddresses", default="16")
   parser.add_option("--ram-cell-num-bits", dest="ramCellNumBits", default="1024")
+  parser.add_option("--fast-ram-word-width", dest="fastRAMWordWidth", default="64")
+  parser.add_option("--fast-ram-address-width", dest="fastRAMAddressWidth", default="32")
   parser.add_option("--language", dest="language", default="c")
   (opt, _) = parser.parse_args()
   
@@ -306,6 +310,8 @@ def main():
   zcc_parser.merkle_gen = merkle.MerkleConsGen(opt.dbHashFunc, zcc_parser.verbose)
   zcc_parser.db_size = int(opt.dbNumAddresses)
   zcc_parser.ram_cell_num_bits = int(opt.ramCellNumBits)
+  zcc_parser.word_width = int(opt.fastRAMWordWidth)
+  zcc_parser.address_width = int(opt.fastRAMAddressWidth)
 
   gen = CodeGenerator(opt.output_dir, opt.output_prefix, opt.classname,	
       opt.framework, int(opt.worksheetMode), opt.language)

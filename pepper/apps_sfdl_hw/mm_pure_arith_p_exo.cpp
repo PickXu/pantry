@@ -40,15 +40,43 @@ void mm_pure_arithProverExo::baseline_minimal(void* input, void* output){
   //Run the computation
 }
 
+
+using mm_pure_arith_cons::SIZE;
 void mm_pure_arithProverExo::baseline(const mpq_t* input_q, int num_inputs, 
       mpq_t* output_recomputed, int num_outputs) {
   //struct In input;
   //struct Out output;
-  // Fill code here to prepare input from input_q.
-  
-  // Call baseline_minimal to run the computation
+  int16_t A[SIZE][SIZE];
+  int16_t B[SIZE][SIZE];
+  int64_t C[SIZE][SIZE];
+  const mpq_t* mpqA = input_q;
+  const mpq_t* mpqB = input_q + SIZE*SIZE;
+  for(int i = 0; i < SIZE; i++){
+    for(int j = 0; j < SIZE; j++){
+      A[i][j] = mpz_get_si(mpq_numref(mpqA[j+i*SIZE]));
+      B[i][j] = mpz_get_si(mpq_numref(mpqB[j+i*SIZE]));
+    }
+  }
+
+  // Do the computation
+  for(int i = 0; i < SIZE; i++){
+    for(int j = 0; j < SIZE; j++){
+      C[i][j] = 0;
+      for(int k = 0; k < SIZE; k++){
+        C[i][j] += A[i][k] * B[k][j];
+      }
+    }
+  }
 
   // Fill code here to dump output to output_recomputed.
+  mpq_set_si(output_recomputed[0],0,1);
+  //C
+  mpq_t* mpqC = output_recomputed + 1;
+  for(int i = 0; i < SIZE; i++){
+    for(int j = 0; j < SIZE; j++){
+      mpq_set_si(mpqC[j+i*SIZE], C[i][j], 1);
+    }
+  }
 }
 
 //Refer to apps_sfdl_gen/mm_pure_arith_cons.h for constants to use in this exogenous
@@ -58,8 +86,8 @@ bool mm_pure_arithProverExo::exogenous_check(const mpz_t* input, const mpq_t* in
 
   bool passed_test = true;
 #ifdef ENABLE_EXOGENOUS_CHECKING
-  gmp_printf("<Exogenous check not implemented>");
-  /*mpq_t *output_recomputed;
+  //gmp_printf("<Exogenous check not implemented>");
+  mpq_t *output_recomputed;
   alloc_init_vec(&output_recomputed, num_outputs);
   baseline(input_q, num_inputs, output_recomputed, num_outputs);
 
@@ -68,8 +96,9 @@ bool mm_pure_arithProverExo::exogenous_check(const mpz_t* input, const mpq_t* in
       passed_test = false;
       break;
     }
+    //gmp_printf("Output actual: %Qd expected: %Qd\n", output_q[i], output_recomputed[i]);
   }
-  clear_vec(num_outputs, output_recomputed);*/
+  clear_vec(num_outputs, output_recomputed);
 #else
   gmp_printf("<Exogenous check disabled>\n");
 #endif

@@ -86,6 +86,12 @@ ZComputationVerifier::~ZComputationVerifier() {
   clear_scalar_G1(g_c_C0);
   clear_vec_G1(size_input+size_output, g_a_Ai_io);
   clear_scalar(r_c_D);
+  
+  #if PUBLIC_VERIFIER == 0
+  clear_vec(size_input+size_output, Ai_io);
+  clear_scalar_G1(g_a_base);
+  #endif
+
 #endif
   // answers
   clear_vec_G1(size_answer_G1, f_ni_answers_G1);
@@ -204,9 +210,7 @@ void ZComputationVerifier::init_state() {
   // init pairing
   init_pairing_from_file(PAIRING_PARAM, prime);
 
-  // need to figure out the exact size of these.
 #if GGPR == 1
-  // double check this number
   size_vk_G1 = 2 + size_input + size_output;
   size_vk_G2 = 8;
 
@@ -294,6 +298,12 @@ void ZComputationVerifier::init_state() {
   alloc_init_scalar_G1(g_c_C0);
   alloc_init_vec_G1(&g_a_Ai_io, size_input+size_output);
   alloc_init_scalar(r_c_D);
+  
+  #if PUBLIC_VERIFIER == 0
+  alloc_init_vec(&Ai_io, size_input+size_output);
+  alloc_init_scalar_G1(g_a_base);
+  #endif
+
 #endif
   // initialize storage for answers
   alloc_init_vec_G1(&f_ni_answers_G1, size_answer_G1);
@@ -593,6 +603,7 @@ void ZComputationVerifier::create_noninteractive_GGPR_query() {
   // dump VK, first copy elements into the array.
   G1_set(vk_G1[0], g_A0);
   G1_set(vk_G1[1], g_C0);
+  
   for (int i = 0; i < size_input+size_output;i++) {
     G1_set(vk_G1[i+2], g_Ai_io[i]);
   }
@@ -606,7 +617,8 @@ void ZComputationVerifier::create_noninteractive_GGPR_query() {
   G2_set(vk_G2[6], h_D);
   G2_set(vk_G2[7], h_B0);
 
-  // dump the verification key in two separate pieces.
+  // dump the verification key in two separate pieces, one for G1 and
+  // another for G2.
   dump_vector_G1(size_vk_G1, vk_G1, (char *)"f_verification_key_G1");
   dump_vector_G2(size_vk_G2, vk_G2, (char *)"f_verification_key_G2");
 
@@ -706,7 +718,6 @@ void ZComputationVerifier::create_noninteractive_query() {
   // choose a generator g, h
   G1_random(g);
   G2_random(h);
-
 
   // randomly pick r_a, r_b, s, \alpha_a, \alpha_b, \alpah_c, \beta, \gamma from field.
   v->get_random_priv(r_a, prime);
@@ -828,13 +839,16 @@ void ZComputationVerifier::create_noninteractive_query() {
   G1_exp(g_a_A0, g_a, eval_poly_A[0]);
   G2_exp(h_b_B0, h_b, eval_poly_B[0]);
   G1_exp(g_c_C0, g_c, eval_poly_C[0]);
+ 
+  #if PUBLIC_VERIFIER == 1 
   G1_fixed_exp(g_a_Ai_io, g_a, eval_poly_A+1+size_f1_g_a_Ai_query, size_input+size_output);
+  #endif
+
   mpz_mul(r_c_D, r_c, D);
   mpz_mod(r_c_D, r_c_D, prime);
 
   // dump the keys into files.
 #if PROTOCOL == PINOCCHIO_ZK
-  //Questionable 
   dump_vector_G1(1, &g_a_D, (char *)"g_a_D");
   dump_vector_G1(1, &g_b_D, (char *)"g_b_D");
   dump_vector_G2(1, &h_b_D, (char *)"h_b_D");
@@ -846,7 +860,6 @@ void ZComputationVerifier::create_noninteractive_query() {
   dump_vector_G1(1, &g_a_beta_D, (char *)"g_a_beta_D");
   dump_vector_G1(1, &g_b_beta_D, (char *)"g_b_beta_D");
   dump_vector_G1(1, &g_c_beta_D, (char *)"g_c_beta_D");
-
 #endif
 
   // dump VK, first copy elements into the array.
@@ -855,9 +868,12 @@ void ZComputationVerifier::create_noninteractive_query() {
   G1_set(vk_G1[2], g_c_C0);
   G1_set(vk_G1[3], g_alpha_b);
   G1_set(vk_G1[4], g_beta_gamma);
+  
+  #if PUBLIC_VERIFIER == 1
   for (int i = 0; i < size_input+size_output;i++) {
     G1_set(vk_G1[i+5], g_a_Ai_io[i]);
   }
+  #endif
 
   G2_set(vk_G2[0], h);
   G2_set(vk_G2[1], h_alpha_a);
@@ -868,11 +884,17 @@ void ZComputationVerifier::create_noninteractive_query() {
   G2_set(vk_G2[6], h_b_B0);
 
   // dump the verification key in two separate pieces.
+  #if PUBLIC_VERIFIER == 1
   dump_vector_G1(size_vk_G1, vk_G1, (char *)"f_verification_key_G1");
+  #else
+  dump_vector_G1(size_vk_G1-(size_input+size_output), vk_G1, (char *)"f_verification_key_G1");
+  dump_vector_G1(1, &g_a, "f_verification_key_base");
+  dump_vector(size_input+size_output, eval_poly_A+1+size_f1_g_a_Ai_query, (char *)"f_verification_key_IO");
+  #endif
   dump_vector_G2(size_vk_G2, vk_G2, (char *)"f_verification_key_G2");
   dump_vector(1, &r_c_D, (char *)"f_verification_key_mpz_t");
 
-  cout << "v_verification_key_size " << stat_size("f_verification_key_G1") + stat_size("f_verification_key_G2") << endl;
+  cout << "v_verification_key_size " << stat_size("f_verification_key_G1") + stat_size("f_verification_key_G2") + stat_size("f_verification_key_mpz_t") + stat_size("f_verification_key_IO")  << endl;
 
   // clear local variables.
 #ifndef DEBUG_TEST_ENABLE
@@ -1708,10 +1730,11 @@ void ZComputationVerifier::prepare_noninteractive_answers(uint32_t beta) {
     G2_t *vk_G2;
     alloc_init_vec_G1(&vk_G1, size_vk_G1);
     alloc_init_vec_G2(&vk_G2, size_vk_G2);
+    
+#if GGPR == 1
     load_vector_G1(size_vk_G1, vk_G1, (char *)"f_verification_key_G1");
     load_vector_G2(size_vk_G2, vk_G2, (char *)"f_verification_key_G2");
-
-#if GGPR == 1
+    
     G1_set(g_A0, vk_G1[0]);
     G1_set(g_C0, vk_G1[1]);
     for (int i = 0; i < size_input+size_output;i++) {
@@ -1727,14 +1750,28 @@ void ZComputationVerifier::prepare_noninteractive_answers(uint32_t beta) {
     G2_set(h_D, vk_G2[6]);
     G2_set(h_B0, vk_G2[7]);
 #else
+    #if PUBLIC_VERIFIER == 1
+    load_vector_G1(size_vk_G1, vk_G1, (char *)"f_verification_key_G1");
+    #else
+    load_vector_G1(size_vk_G1-(size_input+size_output), vk_G1, (char *)"f_verification_key_G1");
+    #endif
+
+    load_vector_G2(size_vk_G2, vk_G2, (char *)"f_verification_key_G2");
+    
     G1_set(g_c_D, vk_G1[0]);
     G1_set(g_a_A0, vk_G1[1]);
     G1_set(g_c_C0, vk_G1[2]);
     G1_set(g_alpha_b, vk_G1[3]);
     G1_set(g_beta_gamma, vk_G1[4]);
+    
+    #if PUBLIC_VERIFIER == 1
     for (int i = 0; i < size_input+size_output;i++) {
       G1_set(g_a_Ai_io[i], vk_G1[i+5]);
     }
+    #else
+    load_vector(size_input+size_output, Ai_io, (char*)"f_verification_key_IO");
+    load_vector_G1(1, &g_a_base, (char*)"f_verification_key_base");
+    #endif
 
     G2_set(h, vk_G2[0]);
     G2_set(h_alpha_a, vk_G2[1]);
@@ -1744,6 +1781,7 @@ void ZComputationVerifier::prepare_noninteractive_answers(uint32_t beta) {
     G2_set(h_beta_gamma, vk_G2[5]);
     G2_set(h_b_B0, vk_G2[6]);
     load_vector(1, &r_c_D, (char *)"f_verification_key_mpz_t");
+    
 #endif
 
     // clear vk_G1 and vk_G2
@@ -1978,10 +2016,32 @@ bool ZComputationVerifier::run_noninteractive_tests(uint32_t beta) {
   G2_set(h_b_B, f_ni_answers_G2[0]);
   //G2_set(h_H, f_ni_answers_G2[1]);
 
+  #if PUBLIC_VERIFIER == 1
   multi_exponentiation_G1(size_input, g_a_Ai_io, input, g1_tmp1);
   multi_exponentiation_G1(size_output, g_a_Ai_io + size_input, output, g_a_A_io);
   G1_mul(g_a_A_io, g1_tmp1, g_a_A_io);
+  #else
+  mpz_t dotp, temp;
+  alloc_init_scalar(dotp);
+  alloc_init_scalar(temp);
+  mpz_set_ui(dotp, 0);
+  int i;
+  for (i=0; i<size_input; i++) {
+    mpz_mul(temp, Ai_io[i], input[i]);
+    mpz_add(dotp, dotp, temp);
+    mpz_mod(dotp, dotp, prime);
+  }
 
+  for (; i<size_input+size_output; i++) {
+    mpz_mul(temp, Ai_io[i], output[i-size_input]);
+    mpz_add(dotp, dotp, temp);
+    mpz_mod(dotp, dotp, prime);
+  }
+  G1_exp(g_a_A_io, g_a_base, dotp); 
+  clear_scalar(dotp);
+  clear_scalar(temp);
+  #endif
+  
   // divisibility test
   // g_a^A0*g_a^A_io*g_a^A
   G1_mul(in1, g_a_A0, g_a_A_io);

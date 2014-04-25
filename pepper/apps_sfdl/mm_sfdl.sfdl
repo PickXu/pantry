@@ -3,7 +3,7 @@
  */
 program matrixmult {
   //Compiler is picky. First define your constants:
-  const m = 128;
+  const m = 32;
 
   //Now your type definitions:
   type iterator = int; //The type of loop iterators is ignored

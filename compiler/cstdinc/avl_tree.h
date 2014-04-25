@@ -104,9 +104,9 @@ typedef struct tree_node {
   uint8_t num_values;
   tree_value_t values[MAX_TREE_NODE_VALUES];
 
-  int height;
-  int height_left;
-  int height_right;
+  uint8_t height;
+  uint8_t height_left;
+  uint8_t height_right;
 } tree_node_t;
 
 typedef struct tree_path {

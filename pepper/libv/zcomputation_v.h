@@ -93,6 +93,11 @@ class ZComputationVerifier : public Verifier {
     G1_t g_c_C0;
     G1_t* g_a_Ai_io;
     mpz_t r_c_D;
+    
+    #if PUBLIC_VERIFIER == 0
+    G1_t g_a_base;
+    mpz_t *Ai_io;
+    #endif
 #endif
     // answers
     G1_t *f_ni_answers_G1;

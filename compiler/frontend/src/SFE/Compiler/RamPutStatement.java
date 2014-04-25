@@ -71,7 +71,7 @@ public class RamPutStatement extends StatementWithOutputLine implements OutputWr
     if (ptrToDataToPut instanceof BitString){
       bitsToPut = (BitString)ptrToDataToPut;
     } else {
-      Pointer ptr = Pointer.toPointer(ptrToDataToPut);
+      Pointer ptr = Pointer.toPointerConstant(ptrToDataToPut);
       LvalExpression actualData = ptr.access();
       //Turn into a bit string of that many bits.
       //Get all derived bits and split them up.

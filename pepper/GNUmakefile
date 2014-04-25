@@ -72,12 +72,19 @@ ifdef COMPILE_DEV
 CFLAGS += -g -rdynamic
 endif
 
+ifeq ($(USE_DB_BLOCK_STORE), 1)
+CFLAGS += -DUSE_DB_BLOCK_STORE
+endif
+
 # DB flags
 ifeq ($(DB_HASH_FUNC),null)
 CFLAGS += -DDB_HASH_FUNC_IS_NULL
 endif
 CFLAGS += -DDB_NUM_ADDRESSES=$(DB_NUM_ADDRESSES) -DDB_HASH_NUM_BITS=$(DB_HASH_NUM_BITS)
 CFLAGS += -DRAM_CELL_NUM_BITS=$(RAM_CELL_NUM_BITS)
+
+CFLAGS += -DFAST_RAM_WORD_WIDTH=$(FAST_RAM_WORD_WIDTH)
+CFLAGS += -DFAST_RAM_ADDRESS_WIDTH=$(FAST_RAM_ADDRESS_WIDTH)
 
 # Common linker flags
 LDFLAGS := -L/usr/local/lib -lm -lgmp -lgmpxx -lgomp -lconfig++ -lgmpmee -lntl -lrt -lfcgi -lpbc -lkyotocabinet

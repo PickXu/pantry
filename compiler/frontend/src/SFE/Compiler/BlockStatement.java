@@ -4,6 +4,7 @@
 
 package SFE.Compiler;
 
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -88,7 +89,7 @@ public class BlockStatement extends Statement implements Optimizable {
     BlockStatement result = new BlockStatement();
 
     for (int i = 0; i < statements.size(); i++) {
-      result.addStatement(((SLPTReduction)((Statement)statements.get(i))).toSLPTCircuit(null));
+      result.addStatement(((SLPTReduction)(statements.get(i))).toSLPTCircuit(null));
     }
 
     return result;

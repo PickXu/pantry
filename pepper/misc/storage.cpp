@@ -1,7 +1,7 @@
 #include <common/measurement.h>
 #include <common/utility.h>
 #include <crypto/crypto.h>
-#include <include/binary_tree_int_hash_t.h>
+#include <include/avl_tree.h>
 #include <storage/configurable_block_store.h>
 #include <storage/exo.h>
 #include <storage/ggh_hash.h>

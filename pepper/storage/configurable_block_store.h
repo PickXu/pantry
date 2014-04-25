@@ -7,7 +7,7 @@
 #include <iostream>
 #include <storage/kyoto_block_store.h>
 #include <storage/leveldb_block_store.h>
-#include <storage/bdb_block_store.h>
+#include <storage/db_block_store.h>
 //#define USE_KYOTO_BLOCK_STORE
 //#define USE_DB_BLOCK_STORE
 

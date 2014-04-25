@@ -1,8 +1,5 @@
 # This file lists the flags which are passed to the C++ code
 
-#Uncomment this line if you want to build CMT codebase
-BUILD_CMT = 0
-
 #Uncomment if this system does not have cuda / nvcc installed
 USE_GPU = 0 
 
@@ -48,6 +45,9 @@ DB_NUM_ADDRESSES = 16
 
 # Number of bits in a RAM cell
 RAM_CELL_NUM_BITS = 1024
+
+FAST_RAM_ADDRESS_WIDTH = 32
+FAST_RAM_WORD_WIDTH = 64
 
 #If uncommented, arithmetic (+, *) will truncate as specified in the ANSI C standard
 #Commented by default, because these truncations add unecessary cost
@@ -103,4 +103,6 @@ ZCC_CARGS += -db-num-addresses $(DB_NUM_ADDRESSES)
 ZCC_CARGS += -ram-cell-num-bits $(RAM_CELL_NUM_BITS)
 ZCC_CARGS += -db-hash-num-bits $(DB_HASH_NUM_BITS)
 
+ZCC_CARGS += -fast-ram-address-width $(FAST_RAM_ADDRESS_WIDTH)
+ZCC_CARGS += -fast-ram-word-width $(FAST_RAM_WORD_WIDTH)
 

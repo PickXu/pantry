@@ -9,5 +9,8 @@ public class CBuiltinFunctions {
                              ASSERT_ZERO_NAME = "assert_zero",
                              INT_STRING_TO_BITS = "__INT_STRING_TO_BITS",
                              COMMITMENTGET_NAME = "commitmentget",
-                             COMMITMENTPUT_NAME = "commitmentput";
+                             COMMITMENTPUT_NAME = "commitmentput",
+                             RAMPUT_ENHANCED_NAME = "ramput_fast",
+                             RAMGET_ENHANCED_NAME = "ramget_fast",
+                             EXO_COMPUTE_NAME = "exo_compute";
 }

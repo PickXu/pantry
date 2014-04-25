@@ -8,6 +8,7 @@
 #include <storage/exo.h>
 #include <common/utility.h>
 #include <common/pairing_util.h>
+#include <common/memory.h>
 
 Prover::Prover(int ph, int b_size, int num_r, int i_size, const char *name) {
   phase = ph;
@@ -611,7 +612,11 @@ void Prover::handle_requests() {
     MPI_Recv(&phase, 1, MPI_INT, MPI_ANY_SOURCE, MPI_PARAMS, MPI_COMM_WORLD,
              MPI_STATUS_IGNORE);
     find_cur_qlengths();
+    cout << "p_current_memory_usage " << getCurrentRSS() << endl;
+    cout << "p_peak_memory_usage " << getPeakRSS() << endl;
     handle_terminal_request();
+    cout << "p_current_memory_usage " << getCurrentRSS() << endl;
+    cout << "p_peak_memory_usage " << getPeakRSS() << endl;
 
     if (phase == PHASE_PROVER_COMMITMENT) {
 #ifdef INTERFACE_MPI

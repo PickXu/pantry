@@ -8,7 +8,6 @@ import SFE.Compiler.AssignmentStatement;
 import SFE.Compiler.BinaryOpExpression;
 import SFE.Compiler.BlockStatement;
 import SFE.Compiler.Expression;
-import SFE.Compiler.FloatConstant;
 import SFE.Compiler.IntConstant;
 import SFE.Compiler.LvalExpression;
 import SFE.Compiler.OutputsToPolynomial;

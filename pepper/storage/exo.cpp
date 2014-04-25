@@ -1,6 +1,7 @@
 // TODO: make sure to check the return status of the block-store ops;
 // fail if they don't return true 
 #include <common/measurement.h>
+#include <common/utility.h>
 #include <storage/configurable_block_store.h>
 #include <storage/exo.h>
 #include <storage/hasher.h>

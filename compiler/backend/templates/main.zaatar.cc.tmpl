@@ -1,6 +1,6 @@
 \#include <${output_prefix}_p.h>
 \#include <${output_prefix}_v.h>
-
+\#include <common/handler.h>
 
 bool MICROBENCHMARKS = 0;
 
@@ -25,6 +25,8 @@ int main(int argc, char **argv)
   int optimize_answers = 1;
   
   ${comp_parameters}
+
+  register_handler();
 
 \#ifdef INTERFACE_MPI
 

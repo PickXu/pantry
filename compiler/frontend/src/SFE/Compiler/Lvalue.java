@@ -57,6 +57,13 @@ public abstract class Lvalue {
    * @return a string representing this lvalue's name.
    */
   public abstract String getName();
+  
+  public abstract boolean hasAddress();
+
+  public abstract int getAddress();
+  
+  public abstract void allocateStackAddress();
+  public abstract void allocateHeapAddress();
 
   /**
    * Returns a vector of all the derived lvalue of this type.

@@ -782,30 +782,38 @@ void ZComputationProver::prover_do_computation() {
       cout << "LOG: Prover is computing Y, Z from X" << endl;
 
     //Run Zaatar implementation
+    if (size_f1_vec < 10000) {
+      num_interpret_runs = num_local_runs;
+    } else {
+      num_interpret_runs = 1;
+    }
+
     if (i == batch_start)
       m_interpret_cons.begin_with_init();
     else
       m_interpret_cons.begin_with_history();
 
-    snprintf(scratch_str, BUFLEN-1, "input_b_%d", i);
-    load_vector(size_input, input, scratch_str, FOLDER_WWW_DOWNLOAD);
+    for (int g = 0; g < num_interpret_runs; g++) {
+      snprintf(scratch_str, BUFLEN-1, "input_b_%d", i);
+      load_vector(size_input, input, scratch_str, FOLDER_WWW_DOWNLOAD);
 
-    snprintf(scratch_str, BUFLEN-1, "input_q_b_%d", i);
-    load_vector(size_input, input_q, scratch_str, FOLDER_WWW_DOWNLOAD);
+      snprintf(scratch_str, BUFLEN-1, "input_q_b_%d", i);
+      load_vector(size_input, input_q, scratch_str, FOLDER_WWW_DOWNLOAD);
 
-    interpret_constraints();
+      interpret_constraints();
 
-    snprintf(scratch_str, BUFLEN-1, "output_b_%d", i);
-    dump_vector(size_output, output, scratch_str, FOLDER_WWW_DOWNLOAD);
+      snprintf(scratch_str, BUFLEN-1, "output_b_%d", i);
+      dump_vector(size_output, output, scratch_str, FOLDER_WWW_DOWNLOAD);
 
-    snprintf(scratch_str, BUFLEN-1, "output_q_b_%d", i);
-    dump_vector(size_output, output_q, scratch_str, FOLDER_WWW_DOWNLOAD);
+      snprintf(scratch_str, BUFLEN-1, "output_q_b_%d", i);
+      dump_vector(size_output, output_q, scratch_str, FOLDER_WWW_DOWNLOAD);
 
-    // export the outputs to different block stores
-    exogenous_checker->export_exo_inputs(output_q, size_output, bstore_file_path, _blockStore);
+      // export the outputs to different block stores
+      exogenous_checker->export_exo_inputs(output_q, size_output, bstore_file_path, _blockStore);
 
-    // shuffle the explicit inputs, in case of MapRed
-    //exogenous_checker->run_shuffle_phase(i, FOLDER_STATE);
+      // shuffle the explicit inputs, in case of MapRed
+      //exogenous_checker->run_shuffle_phase(i, FOLDER_STATE);
+    }
 
     m_interpret_cons.end();
     

@@ -43,7 +43,7 @@ int compute(struct In *input, struct Out *output) {
   KEY_index.root = handle.KEY_index;
   Average_index.root = handle.Average_index;
 
-  uint32_t path_depth, tree_path;
+  uint32_t path_depth = 0, tree_path = 0;
   {
     tree_result_set_t tempResult;
     Student_t tempStudent;

@@ -73,7 +73,7 @@ public class RamGetStatement extends StatementWithOutputLine implements OutputWr
     if (target != null){
       bitsTarget.toAssignments(target, assignments);
     }
-  }  
+  }
 
   public int getOutputLine() {
     return subStatements[0].getOutputLine();

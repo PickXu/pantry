@@ -4,7 +4,6 @@
 
 package SFE.Compiler;
 
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.ListIterator;
@@ -16,7 +15,7 @@ import java.util.Vector;
 /**
  * A class that handles the unique variables.
  */
-public class VariableLUT {
+public class VariableLUT {	
   //~ Instance fields --------------------------------------------------------
 
   /*

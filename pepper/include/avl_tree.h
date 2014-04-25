@@ -4,13 +4,15 @@
 #pragma pack(push)
 #pragma pack(1)
 
+#include <stdlib.h>
 #include <stdint.h>
 #include <include/db.h>
 
 #define KEY_T int
 #define VALUE_T hash_t
 
-#define BOOL int
+typedef int BOOL;
+
 #define TRUE 1
 #define FALSE 0
 #define NULL_PTR NULL_HASH
@@ -84,6 +86,20 @@
 //typedef uint32_t tree_key_t;
 //typedef hash_t tree_value_t;
 
+typedef struct compressed_tree_node {
+  uint32_t left;
+  uint32_t right;
+
+  tree_key_t key;
+
+  uint8_t num_values;
+  uint32_t values[MAX_TREE_NODE_VALUES];
+
+  uint8_t height;
+  uint8_t height_left;
+  uint8_t height_right;
+} compressed_tree_node_t;
+
 typedef struct tree_node {
   hash_t left;
   hash_t right;
@@ -93,9 +109,9 @@ typedef struct tree_node {
   uint8_t num_values;
   tree_value_t values[MAX_TREE_NODE_VALUES];
 
-  int height;
-  int height_left;
-  int height_right;
+  uint8_t height;
+  uint8_t height_left;
+  uint8_t height_right;
 } tree_node_t;
 
 typedef struct tree {

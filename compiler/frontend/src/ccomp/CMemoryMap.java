@@ -7,7 +7,10 @@ package ccomp;
  * All structures grow towards increasing addresses. 
  */
 public class CMemoryMap {
-  public static final int HEAP = 0;
   public static final int STACK = 0x50000000;
+  public static final int HEAP = 0;
   public static final int STRING_TABLE = 0x70000000;
+  
+  public static final int STACK_MAX = STRING_TABLE;
+  public static final int HEAP_MAX = STACK;
 }

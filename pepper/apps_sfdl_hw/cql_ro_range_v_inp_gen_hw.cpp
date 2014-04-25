@@ -39,7 +39,11 @@ void cql_ro_rangeVerifierInpGenHw::create_input(mpq_t* input_q, int num_inputs)
     int number_of_rows = SIZE - 1;
 
     // get the full handle of a DB.
+#ifdef USE_DB_BLOCK_STORE
+    handle = create_compressed_db(number_of_rows, ("prover_1_" + shared_bstore_file_name).c_str());
+#else
     handle = create_db(number_of_rows, ("prover_1_" + shared_bstore_file_name).c_str());
+#endif
 
     uint64_t* input_ptr = (uint64_t*)&handle;
     for(int i = 0; i < num_ints; i++) {

@@ -1,6 +1,8 @@
 #ifndef EXTERNAL_SORT_H_
 #define EXTERNAL_SORT_H_
 
+void dump_array(char* array_to_dump, long size_in_bytes, long offset, const char* filename, const char* folder_name);
+
 void dump_array(char* array_to_dump, long size_in_bytes, const char* filename, const char* folder_name);
 
 void load_array(char* array_to_fill, long size_in_bytes, long offset, const char* filename, const char* folder_name);

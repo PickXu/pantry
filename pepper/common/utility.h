@@ -57,10 +57,12 @@ using std::endl;
   #define NONINTERACTIVE 1
   #define GGPR 0
   #define FAST_FOURIER_INTERPOLATION 0
+  #define PUBLIC_VERIFIER 0 
 #elif PROTOCOL == PINOCCHIO_ZK
   #define NONINTERACTIVE 1
   #define GGPR 0
   #define FAST_FOURIER_INTERPOLATION 0
+  #define PUBLIC_VERIFIER 0
 #endif
 
 extern "C" {
@@ -101,6 +103,7 @@ using std::endl;
 using std::string;
 using std::vector;
 using std::pair;
+using std::fstream;
 using std::ifstream;
 using std::ofstream;
 using std::stringstream;
@@ -126,6 +129,8 @@ bool open_file(FILE **fp, const char *vec_name, const char *permission,
   const char *folder_name);
 
 int stat_size(const char* filename, const char*folder_name = NULL);
+
+void open_file_update(fstream& fp, const char* name, const char* folder_name);
 
 void open_file_read(ifstream& fp, const char* name, const char*folder_name);
 

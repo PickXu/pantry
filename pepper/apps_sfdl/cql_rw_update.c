@@ -14,7 +14,7 @@ int compute(struct In *input, struct Out *output) {
   hashget(&handle, &(input->db_handle));
   KEY_index.root = handle.KEY_index;
 
-  uint32_t path_depth, encoded_tree_path;
+  uint32_t path_depth = 0, encoded_tree_path = 0;
   CQL("UPDATE Student SET Honored = 1 WHERE KEY = 90", path_depth, encoded_tree_path);
 
   handle.KEY_index = KEY_index.root;

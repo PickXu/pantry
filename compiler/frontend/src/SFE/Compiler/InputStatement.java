@@ -139,6 +139,14 @@ public class InputStatement extends StatementWithOutputLine implements OutputWri
     for (int i = 0; i < input.size(); i++) {
       InputStatement is = new InputStatement(input.lvalFieldEltAt(i));
       result.addStatement(is);
+
+			// assert(is.input.getLvalue().hasAddress());
+			// int address = is.input.getLvalue().getAddress();
+			//
+			// Statement ramput = new
+			// RamPutEnhancedStatement(IntConstant.valueOf(address), is.input);
+			// ramput = ramput.toSLPTCircuit(null);
+			// result.addStatement(ramput);
     }
 
     return result;

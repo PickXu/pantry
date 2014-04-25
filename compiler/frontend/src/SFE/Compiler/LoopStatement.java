@@ -1,5 +1,7 @@
 package SFE.Compiler;
 
+import java.io.PrintWriter;
+
 public class LoopStatement extends Statement {
   //Compile-time derivable condition.
   private Expression cond;

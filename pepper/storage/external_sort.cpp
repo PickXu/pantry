@@ -4,8 +4,22 @@
 
 #define BUFSIZE 8192
 
+void dump_array(char* array_to_dump, long size_in_bytes, long offset, const char* filename, const char* folder_name) {
+  //cout << "dumping " << size_in_bytes << " bytes into " << filename << " at offset " << offset << endl;
+  fstream fp;
+  open_file_update(fp, filename, folder_name);
+  fp.seekp(offset);
+  if (!fp.write(array_to_dump, size_in_bytes)) {
+    cout << "Error writing to " << filename << endl;
+    fp.close();
+    exit(1);
+  }
+  //cout << "bytes actually dumped " << fp.tellp() << endl;
+  fp.close();
+}
+
 void dump_array(char* array_to_dump, long size_in_bytes, const char* filename, const char* folder_name) {
-  cout << "dumping " << size_in_bytes << " bytes into " << filename << endl;
+  //cout << "dumping " << size_in_bytes << " bytes into " << filename << endl;
   ofstream fp;
   open_file_write(fp, filename, folder_name);
   if (!fp.write(array_to_dump, size_in_bytes)) {
@@ -13,21 +27,21 @@ void dump_array(char* array_to_dump, long size_in_bytes, const char* filename, c
     fp.close();
     exit(1);
   }
-  cout << "bytes actually dumped " << fp.tellp() << endl;
+  //cout << "bytes actually dumped " << fp.tellp() << endl;
   fp.close();
 }
 
 void load_array(char* array_to_fill, long size_in_bytes, long offset, const char* filename, const char* folder_name) {
   ifstream fp;
   open_file_read(fp, filename, folder_name);
-  cout << "loading " << size_in_bytes << " bytes from " << filename << " at offset " << offset << endl;
+  //cout << "loading " << size_in_bytes << " bytes from " << filename << " at offset " << offset << endl;
   fp.seekg(offset);
   if (!fp.read(array_to_fill, size_in_bytes)) {
     cout << "Error reading " << size_in_bytes << " bytes from " << filename << " at offest " << offset << endl;
     fp.close();
     exit(1);
   }
-  cout << "bytes actually loaded " << fp.gcount() << endl;
+  //cout << "bytes actually loaded " << fp.gcount() << endl;
   fp.close();
 }
 
@@ -117,6 +131,7 @@ void sort_one_chunk(const char* filename, const char* folder_name, long entry_si
   snprintf(full_filename, BUFLEN - 1, "%s/%s", folder_name, filename);
   off_t file_size = get_file_size(full_filename);
   long number_of_entries = file_size / entry_size;
+  //printf("chunk size: %ld entry size: %ld number of entries: %ld\n", file_size, entry_size, number_of_entries);
 
   char* buffer_to_sort = new char[number_of_entries * entry_size];
   // load each chunk into memory, sort it and write it back as one sorted chunk.

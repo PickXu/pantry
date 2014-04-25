@@ -48,6 +48,8 @@ do
 	-db-num-addresses)  dbNumAddresses="$2"; shift;;
 	-ram-cell-num-bits) ramCellNumBits="$2"; shift;;
 	-db-hash-num-bits) dbHashNumBits="$2"; shift;;
+  -fast-ram-word-width) fastRAMWordWidth="$2";shift;;
+  -fast-ram-address-width) fastRAMAddressWidth="$2";shift;;
         --) shift; break;;
         -*)
 	  echo -e >&2 \
@@ -344,7 +346,11 @@ backendArgs+=" -m $metrics -w $worksheetMode"
 backendArgs+=" --db-hash-func $dbHashFunc"
 backendArgs+=" --db-num-addresses $dbNumAddresses"
 backendArgs+=" --ram-cell-num-bits $ramCellNumBits"
+backendArgs+=" --fast-ram-word-width $fastRAMWordWidth"
+backendArgs+=" --fast-ram-address-width $fastRAMAddressWidth"
 backendArgs+=" --language $extension"
+
+#echo $backendArgs
 
 $TIMER "metric_compile_backend_utime $classname %U\nmetric_compile_backend_stime $classname %S\n" python2 zcc_backend.py $backendArgs
 

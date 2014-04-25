@@ -166,6 +166,23 @@ recursive_mkdir(const string& dir, mode_t mode)
   return success;
 }
 
+void open_file_update(fstream& fp, const char* name, const char* folder_name) {
+  char file_name[BUFLEN];
+
+  if (folder_name == NULL)
+    snprintf(file_name, BUFLEN-1, "%s/%s", FOLDER_STATE, name);
+  else
+    snprintf(file_name, BUFLEN-1, "%s/%s", folder_name, name);
+  fp.open(file_name, ios_base::in | ios_base::out);
+  if (!fp.is_open()) {
+    fp.open(file_name, ios_base::out);
+    if (!fp.is_open()) {
+      cout <<"Warning: could not operate file "<<file_name << endl;
+      exit(1);
+    }
+  }
+}
+
 void open_file_write(ofstream& fp, const char* name, const char*folder_name) {
   char file_name[BUFLEN];
 

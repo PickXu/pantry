@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
         int chunk_id = atoi(argv[3]);
         int number_of_entries_in_chunk = atoi(argv[4]);
         int entry_size = sizeof(hash_t) + sizeof(Student_t);
-        generate_one_chunk_of_db_row(starting_row_id, chunk_id, number_of_entries_in_chunk, entry_size, FOLDER_TMP);
+        generate_one_chunk_of_db_row(starting_row_id, chunk_id, number_of_entries_in_chunk, entry_size, FOLDER_TMP, FOLDER_STATE);
         break;
       }
     case SORT_ROWS_KV_PAIRS:
@@ -127,7 +127,8 @@ int main(int argc, char **argv) {
       {
         cout << "merging" << endl;
         const char* bstore_file_name = argv[2];
-        merge_into_one_db(FOLDER_STATE, bstore_file_name);
+        int number_of_chunks = atoi(argv[3]);
+        merge_into_one_db(FOLDER_STATE, number_of_chunks, bstore_file_name);
         break;
       }
     case GET_DB_HANDLE:

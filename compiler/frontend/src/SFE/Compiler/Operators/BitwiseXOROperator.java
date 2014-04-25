@@ -1,14 +1,9 @@
 package SFE.Compiler.Operators;
 
 import SFE.Compiler.AnyType;
-import SFE.Compiler.AssignmentStatement;
 import SFE.Compiler.BinaryOpExpression;
-import SFE.Compiler.BitString;
-import SFE.Compiler.BlockStatement;
 import SFE.Compiler.Expression;
 import SFE.Compiler.IntConstant;
-import SFE.Compiler.LvalExpression;
-import SFE.Compiler.SLPTReduction;
 import SFE.Compiler.Type;
 
 public class BitwiseXOROperator extends BitwiseOperator {

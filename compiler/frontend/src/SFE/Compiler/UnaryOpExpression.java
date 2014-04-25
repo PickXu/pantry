@@ -73,7 +73,7 @@ public class UnaryOpExpression extends OperationExpression implements Inlineable
       result.addStatement((AssignmentStatement)obj);
       return result;
     }
-    
+
     result.addStatement(((SLPTReduction) op).toSLPTCircuit(obj));
     return result;
   }

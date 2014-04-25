@@ -99,7 +99,7 @@ public class PrintfStatement extends StatementWithOutputLine implements OutputWr
 
     outputLine = Program.getLineNumber();
     assignments.add(this);
-  }  
+  }
 
   public int getOutputLine() {
     return outputLine;

@@ -9,7 +9,7 @@ bounded_loopProverExo::bounded_loopProverExo() { }
 void bounded_loopProverExo::baseline(const mpq_t* input_q, int num_inputs, 
       mpq_t* output_recomputed, int num_outputs) {
 
-  //int32_t SIZE = bounded_loop_cons::SIZE;
+  int32_t SIZE = bounded_loop_cons::SIZE;
 
   int32_t a[SIZE];
   int64_t subSum = 0;
