@@ -5,24 +5,13 @@
 #include <string.h>
 #include <stdint.h>
 
-#ifndef MAX_SIZE
-#define MAX_SIZE 8
-#endif 
-
 #define BUFFER_SIZE 1024
 #define BUFFER_CHUNK 10*BUFFER_SIZE
 
-#define _ELM_TYPE int
-
-struct In {_ELM_TYPE input[MAX_SIZE];};
-struct Out {_ELM_TYPE output[MAX_SIZE];};
-
-void compute(struct In *input, struct Out *output);
+void compute(int *input, int *output, int length);
 
 int main(int argc, char **argv) {
     int i;
-    struct In foo = {{0,}};
-    struct Out bar = {{0,}};
 
     int nRead = 0;
     char buf[BUFFER_SIZE];
@@ -30,6 +19,11 @@ int main(int argc, char **argv) {
     char *inString = malloc(inStrSize*sizeof(char));
     char *tok, *stok;
     char *saveptr1, *saveptr2, *str1, *str2;
+
+    int length = 0;
+    int *dst;
+    int *input;
+    int *output;
 
     if ((argc == 0) || (argv == 0)) { exit(-1); }
 
@@ -47,12 +41,16 @@ int main(int argc, char **argv) {
     inString[i] = '\0';  // null terminate
 
     // tokenize on spaces, braces
-    // skip first token (this is length, but we've hard coded it for now)
     for (i=-1, str1 = inString ; ; i++, str1 = NULL) {
         tok = strtok_r(str1," []",&saveptr1);
 
-        if (i < 0) { continue; }
-        else if (i == MAX_SIZE || NULL == tok) { break; }
+        if (i == length || NULL == tok) { break; }
+
+        if (i < 0) {
+            dst = &length;
+        } else {
+            dst = &(input[i]);
+        }
 
         // tokenize on rational notation, e.g., 5%2
         // note that we turn these into integers!
@@ -62,43 +60,56 @@ int main(int argc, char **argv) {
             if (NULL == stok) { break; }
 
             if (str2 != NULL) {
-                foo.input[i] = (_ELM_TYPE) atoi(stok);
+                *dst = (int) atoi(stok);
             } else {
-                foo.input[i] /= (_ELM_TYPE) atoi(stok);
+                *dst /= (int) atoi(stok);
             }
+        }
+
+        if (i < 0) {
+            input = calloc(length,sizeof(int));
+            output = calloc(length,sizeof(int));
         }
     }
 
-    compute(&foo,&bar);
+    free(inString);
 
-    for (i=0; i<MAX_SIZE; i++) {
-        printf("%u ",bar.output[i]);
-        fprintf(stderr,"%u ",bar.output[i]);
+
+    compute(input,output,length);
+
+    fprintf(stderr,"\n");
+    for (i=0; i<length; i++) {
+        printf("%u ",output[i]);
+        fprintf(stderr,"%u ",output[i]);
     }
+    fprintf(stderr,"\n");
+
+    free(input);
+    free(output);
 
     return 0;
 }
 
-void compute(struct In *input, struct Out *output) {
+void compute(int *input, int *output, int length) {
     int bPtr, ePtr, mPtr, lPtr, rPtr;
     int span;
     int i;
     bool out2in = false;
-    _ELM_TYPE *dst, *src;
+    int *dst, *src;
 
-    for (span = 1; span < MAX_SIZE; span *= 2) {
-        // MAX_SIZE had better be a power of 2!!!
+    for (span = 1; span < length; span *= 2) {
+        // length had better be a power of 2!!!
 
         // out2in means we're going out->in and need to copy back at the end
         if (out2in) {
-            src = output->output;
-            dst = input->input;
+            src = output;
+            dst = input;
         } else {    // otherwise we're going input->output
-            src = input->input;
-            dst = output->output;
+            src = input;
+            dst = output;
         }
 
-        for (bPtr = 0; bPtr < MAX_SIZE; bPtr += 2*span) {
+        for (bPtr = 0; bPtr < length; bPtr += 2*span) {
             lPtr = bPtr;
             mPtr = lPtr + span;
             rPtr = mPtr;
@@ -117,8 +128,8 @@ void compute(struct In *input, struct Out *output) {
     }
 
     if (!out2in) {  // note, !out2in here because it was negated just above
-        for (i=0; i<MAX_SIZE; i++) {
-            output->output[i] = input->input[i];
+        for (i=0; i<length; i++) {
+            output[i] = input[i];
         }
     }
 }

@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-#define MAX_SIZE 8
+#define MAX_SIZE 256
 
 #define innerLoop(src,dst)                                                                      \
             for (i=lPtr; i<ePtr; i++) {                                                         \
@@ -47,4 +47,3 @@ void compute(struct In *input, struct Out *output) {
         }
     }
 }
-

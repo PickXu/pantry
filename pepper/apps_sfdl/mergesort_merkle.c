@@ -1,12 +1,14 @@
 #include <stdint.h>
+#include <db.h>
 
-#define MAX_SIZE 8
+#define MAX_SIZE 4
 
 struct In { uint32_t input[MAX_SIZE]; } ;
 struct Out { uint32_t output[MAX_SIZE]; } ;
 
 void compute(struct In *input, struct Out *output) {
     int bPtr, ePtr, mPtr, lPtr, rPtr, span;
+    int lPtrLim, rPtrLim;
     int i;
     int inOffset = 0;
     int outOffset = MAX_SIZE;
@@ -28,10 +30,16 @@ void compute(struct In *input, struct Out *output) {
             rPtr = mPtr;
             ePtr = rPtr + span;
 
-            // since loops get unrolled at compile time, these branches do not appear in the circuit
             for (i=lPtr; i<ePtr; i++) {
-                ramget(&tmp1, lPtr + inOffset);
-                ramget(&tmp2, rPtr + inOffset);
+                lPtrLim = lPtr + inOffset;
+                if (lPtrLim >= 2*MAX_SIZE) { lPtrLim = 2*MAX_SIZE - 1; }
+
+                rPtrLim = rPtr + inOffset;
+                if (rPtrLim >= 2*MAX_SIZE) { rPtrLim = 2*MAX_SIZE - 1; }
+
+                ramget(&tmp1, lPtrLim);
+                ramget(&tmp2, rPtrLim);
+
                 if ( (lPtr < mPtr) && ( (! (rPtr < ePtr)) || (tmp1 < tmp2) ) ) {
                     tmp2 = tmp1;
                     lPtr++;
@@ -53,4 +61,3 @@ void compute(struct In *input, struct Out *output) {
         ramget(&(output->output[i]), i + inOffset);
     }
 }
-

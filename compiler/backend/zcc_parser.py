@@ -161,24 +161,23 @@ def generate_memory_consistency_in_spec(spec_file):
       terms = line.split()
       op = terms[0]
       addr = terms[2]
-      value = terms[4]
-      if line.startswith("RAMPUT_FAST"):
+      inValue = terms[4]
+      if op == "RAMPUT_FAST":
+        type = STORE_OP
         condition = terms[6]
         branch = terms[7]
         value = terms[8]
       else:
+        type = LOAD_OP
         condition = 1
         branch = "true"
-      if op == "RAMPUT_FAST":
-        type = STORE_OP
-      else:
-        type = LOAD_OP
+        value = inValue
 
       # assign type and timestamp to variables for this memory operation
       global mem_ops_input
       global mem_timestamp
 
-      mem_ops_input += [str(addr), str(mem_timestamp), str(type), str(value), str(condition), str(branch)]
+      mem_ops_input += [str(addr), str(mem_timestamp), str(type), str(value), str(condition), str(branch), str(inValue)]
       mem_timestamp += 1
     new_spec_file.write(line + "\n")
 
@@ -190,7 +189,7 @@ def generate_memory_consistency_in_spec(spec_file):
 
   if len(mem_ops_input) > 0:
     # compute width
-    width = len(mem_ops_input) / (num_elements_in_mem_op_tuple + 2)
+    width = len(mem_ops_input) / (num_elements_in_mem_op_tuple + 3)
     # pad width to be power of 2.
     rounded_width = math.pow(2, math.ceil(math.log(width, 2)));
     if rounded_width < 2:
@@ -203,7 +202,7 @@ def generate_memory_consistency_in_spec(spec_file):
     while width < rounded_width:
       # pad with store 0 at addr 0. This should have no effect on actual memory operations.
       # TODO confirm this.
-      mem_ops_input += ["0", str(mem_timestamp), str(NO_OP), "0", "1", "true"]
+      mem_ops_input += ["0", str(mem_timestamp), str(NO_OP), "0", "1", "true", "0"]
       width += 1
       mem_timestamp += 1
 
@@ -647,7 +646,7 @@ def division_as_basic_constraints(arg0, op, arg1, target):
       "( %s ) * ( -2 * %s ) + ( %s - %s )\n" %
           (bless0, b, b, absb),
       "%s < %s - %s\n" % (absr, absb, absrlessabsb),
-      "%( %s ) * ( %s ) + ( - %s )\n" % (bnon0, a, atbnon0),
+      "( %s ) * ( %s ) + ( - %s )\n" % (bnon0, a, atbnon0),
       "( %s ) * ( %s ) + ( %s - %s )\n" %
            (b, q, r, atbnon0),
        "( %s ) * ( 1 - %s ) + ( )\n" % (bnon0, absrlessabsb),
@@ -790,6 +789,10 @@ def benes_network_as_basic_constraints(address_width, width, depth, input):
     switch_index = 0
 
     log_width = int(math.log(width, 2))
+
+    for i in switches:
+      constraint = "( 1 - %s ) * ( %s ) + ( 0 - 0 )" % ( i , i )
+      yield constraint
 
     # the first half of the butterfly network
     for i in range(log_width):
@@ -1038,7 +1041,7 @@ def parse_mem_consistency_spec_line(terms):
   assert terms[current_token] == "INPUT"
   current_token = current_token + 1
 
-  input = list(terms)[current_token:(current_token + (num_elements_in_mem_op_tuple + 2) * width)] # <num_elements_in_mem_op_tuple * width> of them
+  input = list(terms)[current_token:(current_token + (num_elements_in_mem_op_tuple + 3) * width)] # <num_elements_in_mem_op_tuple * width> of them
 
   return (address_width, width, depth, input)
 
@@ -1046,7 +1049,7 @@ def generate_computation_benes_network_actual_input(address_width, width, depth,
   def pv(name):
     return variables.read_var(name)
 
-  num_elements_in_input_tuple = num_elements_in_mem_op_tuple + 2
+  num_elements_in_input_tuple = num_elements_in_mem_op_tuple + 3
   actual_input = []
   computations = ""
 
@@ -1057,16 +1060,19 @@ def generate_computation_benes_network_actual_input(address_width, width, depth,
     value = input[i * num_elements_in_input_tuple + 3]
     condition = input[i * num_elements_in_input_tuple + 4]
     branch = input[i * num_elements_in_input_tuple + 5]
+    inValue = input[i * num_elements_in_input_tuple + 6]
 
     # if it's load operation or it's a store operations that's definitely going
     # to be executed, the actual input will be the original variables/constant
     # used in RAMPUT_FAST and RAMGET_FAST.
-    if type == str(LOAD_OP):
+    if (type == str(LOAD_OP)) or (type == str(NO_OP)):
       actual_input += [addr, timestamp, type, value]
     elif ((condition == "1" or condition == 1 ) and branch == "true"):
       actual_input += [addr, timestamp, type, value]
+      computations += "( 1 ) * ( 1 - 1 ) + ( %s - %s )\n" % (value, inValue)
     elif ((condition == "0" or condition == 0 ) and branch == "false"):
       actual_input += [addr, timestamp, type, value]
+      computations += "( 0 ) * ( 0 - 0 ) + ( %s - %s )\n" % (value, inValue)
     else:
       #otherwise, the op code will be either no_op or store.
       actual_type = "benes$input$%s$.type" % timestamp
@@ -1077,8 +1083,10 @@ def generate_computation_benes_network_actual_input(address_width, width, depth,
 
       if branch == "true":
         computations += "( %s ) * ( %s - %s ) + ( %s - %s )\n" % (condition, type, NO_OP, NO_OP, actual_type)
+        computations += "( %s ) * ( %s - %s ) + ( 0 - 0 )\n" % (condition, value, inValue)
       else:
         computations += "( 1 - %s ) * ( %s - %s ) + ( %s - %s )\n" % (condition, type, NO_OP, NO_OP, actual_type)
+        computations += "( 1 - %s ) * ( %s - %s ) + ( 0 - 0 )\n" % (condition, value, inValue)
 
       actual_input += [addr, timestamp, actual_type, value]
 

@@ -5,8 +5,8 @@
 .PRECIOUS: build/%.jo %_out %_ver %_ver_so %.o %.so ver_% build/TrVer build
 
 SRCFILES:=$(shell find src -name '*.c' -or -name '*.h')
-TR_NUMSTEPS=465
-TR_TAPELEN_MAX=9
+TR_NUMSTEPS=2645
+TR_TAPELEN_MAX=33
 CFLAGS+=-Wall
 CFLAGS+=-fPIC
 TRSIM_NARG=
@@ -36,7 +36,7 @@ mergesort: mergesort.asm build/ver_mergesort
 
 mergesort.asm: build mergesort_v1.asm
 	@echo "Creating mergesort.asm with random inputs. (MAT_FALSE value: $$MAT_FALSE)"
-	@( cat mergesort_v1.asm ; bin/randmats.pl -n 5 -s 8 -l $(MAT_FALSE) ) > build/mergesort.asm
+	@( cat mergesort_v1.asm ; bin/randmats.pl -n 5 -s 32 -l $(MAT_FALSE) ) > build/mergesort.asm
 	@ln -sf build/mergesort.asm .
 	@echo Done.
 	@echo

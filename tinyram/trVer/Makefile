@@ -7,9 +7,9 @@
 SRCFILES:=$(shell find src/ver -name '*.c' -or -name '*.h')
 
 # default, but you can override on the commandline
-TR_NUMSTEPS?=465
-TR_INTAPELEN?=9
-TR_AUXTAPELEN?=8
+TR_NUMSTEPS?=6125
+TR_INTAPELEN?=65
+TR_AUXTAPELEN?=64
 
 CFLAGS+=-Wall
 CFLAGS+=-fPIC
@@ -26,6 +26,8 @@ SOFLAGS=-shared
 CC=gcc
 
 RUN_LOCAL?=1
+RUN_LARGEMEM?=
+RUN_TIME?="02:00:00"
 
 ZCC_FOLDER=../constrSrc/
 PEPPER_FOLDER=../../pepper/
@@ -34,6 +36,7 @@ SCRIPT_FOLDER=../../scripts/
 ZCCPATH=../../compiler
 ZCCORIG=$(ZCCPATH)/zcc
 ZCCPATCH=lib/zcc.patch
+ZCC_ECS?=--ecs
 
 all: TR_NUMSTEPS=128
 all: TR_INTAPELEN=1
@@ -124,7 +127,7 @@ build/%_pantry: build/zcc/bin/%.qap
 			./run/run_pepper.sh $(PREFIX)_ver; \
 		else \
 			cd $(SCRIPT_FOLDER); \
-			./run_tinyram_jobs.py $(PREFIX)_ver $(TR_NUMSTEPS); \
+			./run_mem_job.py $(PREFIX)_ver $(TR_NUMSTEPS) $(RUN_TIME) $(RUN_LARGEMEM); \
 		fi; \
 		cd $(OLDPWD) ;\
 	 done
@@ -146,14 +149,14 @@ bin/zcc: $(ZCCORIG) $(ZCCPATCH)
 build/zcc/%.ZAATAR.spec: build/% bin/zcc
 	@echo "Building ZAATAR execution verifier from $<..."
 	@mkdir -p build/zcc
-	@./bin/zcc --frontendonly --zccdir $(ZCCPATH) --rundir build/zcc -f $< -t ZAATAR -w 10240 --ecs --limcsize
+	@./bin/zcc --frontendonly --zccdir $(ZCCPATH) --rundir build/zcc -f $< -t ZAATAR -w 10240 --limcsize --metrics $(ZCC_ECS)
 	@echo Done.
 	@echo
 
 build/zcc/bin/%.qap: build/zcc/%.c.ZAATAR.spec bin/zcc
 	@echo "Creating QAP file from specfile $<..."
 	@mkdir -p build/zcc
-	@./bin/zcc --backendonly --zccdir $(ZCCPATH) --rundir build/zcc -f $< -t ZAATAR
+	@./bin/zcc --backendonly --zccdir $(ZCCPATH) --rundir build/zcc -f $< -t ZAATAR -w 10240 --limcsize --metrics $(ZCC_ECS)
 	@echo Done.
 	@echo
 
