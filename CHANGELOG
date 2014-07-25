@@ -1,4 +1,4 @@
-Version 2.2 (77ac7ebd0e86c9027112ead934e22916f79a4367)
+Version 2.2 (77ac7ebd0e86c9027112ead934e22916f79a4367), July 25 2014
   + Use the naive switch-case solution to implement RAM operations when
   that solution is cheaper than Merkle-tree based solution
 
@@ -9,12 +9,12 @@ Version 2.2 (77ac7ebd0e86c9027112ead934e22916f79a4367)
   + Add examples: apps_sfdl/ram_hybrid_micro.c and
   apps_sfdl/ram_merkle_micro.c
 
-Version 2.1 (4d25efdba47c1160b6c39a273f29c22652953bf1)
+Version 2.1 (4d25efdba47c1160b6c39a273f29c22652953bf1), June 05 2014
   + Minor updates to TinyRAM's code
   + A bug fix in zcc_parser.py
   + A few updates to examples
 
-Version 2.0 (505877562e7d0dea9e13ae0bd4515ac26aff0760)
+Version 2.0 (505877562e7d0dea9e13ae0bd4515ac26aff0760), April 25 2014
   + Improve the concrete efficiency of RAM operations in Pantry by
   adapting ideas from TinyRAM's memory checking circuit 
   
