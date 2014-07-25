@@ -46,7 +46,8 @@ do
 	-prefix)  prefix="$2"; shift;;
 	-db-hash-func)  dbHashFunc="$2"; shift;;
 	-db-num-addresses)  dbNumAddresses="$2"; shift;;
-	-ram-cell-num-bits) ramCellNumBits="$2"; shift;;
+	-db-thr-num-addresses-naive) dbThrNumAddressesNaive="$2"; shift;;
+  -ram-cell-num-bits) ramCellNumBits="$2"; shift;;
 	-db-hash-num-bits) dbHashNumBits="$2"; shift;;
   -fast-ram-word-width) fastRAMWordWidth="$2";shift;;
   -fast-ram-address-width) fastRAMAddressWidth="$2";shift;;
@@ -118,6 +119,8 @@ if [ "$extension" == "c" ]; then
   # Standard includes (workaround for implicit int functions)
   echo "" > "${filename}tmp.c"
   echo "#define DB_HASH_NUM_BITS ${dbHashNumBits}" >> "${filename}tmp.c"
+  echo "#define DB_NUM_ADDRESSES ${dbNumAddresses}" >> "${filename}tmp.c"
+  echo "#define DB_THR_NUM_ADDRESSES_NAIVE ${dbThrNumAddressesNaive}" >> "${filename}tmp.c"
   if [ $nostdinc == 0 ]; then
   {
     echo "#include <stdinc.h>" >> "${filename}tmp.c"

@@ -9,6 +9,55 @@
 hash_t __NULL_HASH__;
 hash_t* NULL_HASH = &__NULL_HASH__;
 
+#if DB_NUM_ADDRESSES < DB_THR_NUM_ADDRESSES_NAIVE 
+#define USE_NAIVE_MEMORY
+int memory[DB_NUM_ADDRESSES];
+
+// reads and writes to global memory
+// if addr is beyond DB_NUM_ADDRESSES, these functions do not throw an
+// error
+void init_memory() {
+  uint32_t i;
+  for (i=0; i<DB_NUM_ADDRESSES; i++) {
+    memory[i] = i;
+  } 
+}
+
+void ramget_naive(int *val, uint32_t addr) {
+  uint32_t i;
+  for (i=0; i<DB_NUM_ADDRESSES; i++) {
+    if (i == addr) {
+      *val = memory[i];
+    }
+  }
+}
+
+void ramput_naive(uint32_t addr, int *value) {
+  uint32_t i;
+  for (i=0; i<DB_NUM_ADDRESSES; i++) {
+    if (i == addr) {
+      memory[i] = *value;
+    }
+  }
+}
+#endif
+
+void ramget_hybrid(int *val, uint32_t addr) {
+  #ifdef USE_NAIVE_MEMORY
+  ramget_naive(val, addr);
+  #else
+  ramget(val, addr);
+  #endif
+}
+
+void ramput_hybrid(uint32_t addr, int *val) {
+  #ifdef USE_NAIVE_MEMORY
+  ramput_naive(addr, val);
+  #else
+  ramput(addr, val);
+  #endif
+}
+
 int hasheq(hash_t* a, hash_t* b){
   int i;
   int isEq = 1;

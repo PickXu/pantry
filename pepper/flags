@@ -40,11 +40,18 @@ else
 endif
 
 #FLAGS FOR getdb AND putdb:
-#Number of addresses in database 
-DB_NUM_ADDRESSES = 16
+#Number of addresses in RAM (this should be a power of 2 for Merkle-tree
+#based RAM)
+DB_NUM_ADDRESSES = 1024 
 
-# Number of bits in a RAM cell
-RAM_CELL_NUM_BITS = 1024
+# Threshold number of cells in RAM below which we want to use the naive solution to RAM
+# The number below is calculated empirically for 32-bit cells in RAM and
+# with current parameters of Ajtai's hash function
+DB_THR_NUM_ADDRESSES_NAIVE = 32768
+
+# Number of bits in a RAM cell (Note: if DB_NUM_ADDRESSES <
+# DB_THR_NUM_ADDRESSES_NAIVE, this should be smaller than 32)
+RAM_CELL_NUM_BITS = 32
 
 FAST_RAM_ADDRESS_WIDTH = 32
 FAST_RAM_WORD_WIDTH = 64
@@ -102,7 +109,7 @@ ZCC_CARGS += -db-hash-func $(DB_HASH_FUNC)
 ZCC_CARGS += -db-num-addresses $(DB_NUM_ADDRESSES)
 ZCC_CARGS += -ram-cell-num-bits $(RAM_CELL_NUM_BITS)
 ZCC_CARGS += -db-hash-num-bits $(DB_HASH_NUM_BITS)
-
+ZCC_CARGS += -db-thr-num-addresses-naive $(DB_THR_NUM_ADDRESSES_NAIVE)
 ZCC_CARGS += -fast-ram-address-width $(FAST_RAM_ADDRESS_WIDTH)
 ZCC_CARGS += -fast-ram-word-width $(FAST_RAM_WORD_WIDTH)
 
