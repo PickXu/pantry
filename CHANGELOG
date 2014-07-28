@@ -1,17 +1,19 @@
 Version 2.2 (77ac7ebd0e86c9027112ead934e22916f79a4367), July 25 2014
-  +This commit addresses a bug identified by the authors of TrueSet
-  [USENIX Security 2014], whom we thank.
+  + This commit fixes a bug found by the authors of TrueSet (Proceedings
+  of Usenix Security 2014) whom we thank: Ahmed E. Kosba, Dimitrios
+  Papadopoulos, Charalampos Papamanthou, Mahmoud F. Sayed, Elaine Shi,
+  and Nikos Triandopoulos.
 
   Changes:
     + Use the naive switch-case solution to implement RAM operations
     when that solution is cheaper than Merkle-tree based solution
 
     + Add two new APIs: ramget_hybrid() and ramput_hybrid() that
-    automatically switches between the naive solution and the Merkle
-    tree based solution using DB_THR_NUM_ADDRESSES_NAIVE in pepper/flags  
+    automatically switche between the naive solution and the Merkle tree
+    based solution using a flag in pepper/flags, DB_THR_NUM_ADDRESSES_NAIVE 
 
-    + Add examples: apps_sfdl/ram_hybrid_micro.c and
-    apps_sfdl/ram_merkle_micro.c
+    + Add examples to exercise the new API: apps_sfdl/ram_hybrid_micro.c
+    and apps_sfdl/ram_merkle_micro.c
 
 Version 2.1 (4d25efdba47c1160b6c39a273f29c22652953bf1), June 05 2014
   + Minor updates to TinyRAM's code
