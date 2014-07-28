@@ -9,7 +9,7 @@ Version 2.2 (77ac7ebd0e86c9027112ead934e22916f79a4367), July 25 2014
     when that solution is cheaper than Merkle-tree based solution
 
     + Add two new APIs: ramget_hybrid() and ramput_hybrid() that
-    automatically switche between the naive solution and the Merkle tree
+    automatically switch between the naive solution and the Merkle tree
     based solution using a flag in pepper/flags, DB_THR_NUM_ADDRESSES_NAIVE 
 
     + Add examples to exercise the new API: apps_sfdl/ram_hybrid_micro.c
